@@ -534,68 +534,70 @@ def step_install_dependencies() -> str:
 
 def step_unload_module() -> str:
     """Returns 'success', 'repaired', or 'failed'."""
-    ui.phase(2, "Unloading conflicting module")
-    ui.step_header("Step 2 · Unloading conflicting r8188eu module")
+    ui.phase(2, "Unloading conflicting modules")
+    ui.step_header("Step 2 · Unloading conflicting r8188eu & rtl8xxxu modules")
 
-    with SpinnerContext("Removing kernel module r8188eu", spinner="toggle"):
-        result = run_cmd(["rmmod", "r8188eu"])
+    conflicting_modules = ["r8188eu", "rtl8xxxu"]
+    unloaded_any = False
 
-    if result.returncode == 0:
-        ui.success("Module r8188eu unloaded")
-    else:
-        # Check if it's even loaded
-        lsmod = run_cmd(["lsmod"])
-        if "r8188eu" in (lsmod.stdout or ""):
-            # Module is loaded but rmmod failed — force it
-            ui.warn("rmmod failed — trying force unload")
-            ui.repair_animation("Force-removing module")
-            result = run_cmd(["rmmod", "-f", "r8188eu"])
-            if result.returncode == 0:
-                ui.repair("Module force-unloaded")
-                return "repaired"
-            else:
-                ui.warn("Force-unload failed — module may be in use. Will continue anyway.")
-                return "repaired"
+    for mod in conflicting_modules:
+        with SpinnerContext(f"Removing kernel module {mod}", spinner="toggle"):
+            result = run_cmd(["rmmod", mod])
+
+        if result.returncode == 0:
+            ui.success(f"Module {mod} unloaded")
+            unloaded_any = True
         else:
-            ui.info("Module r8188eu was not loaded — nothing to remove")
+            lsmod = run_cmd(["lsmod"])
+            if mod in (lsmod.stdout or ""):
+                ui.warn(f"rmmod {mod} failed — trying force unload")
+                result = run_cmd(["rmmod", "-f", mod])
+                if result.returncode == 0:
+                    ui.repair(f"Module {mod} force-unloaded")
+                    unloaded_any = True
+
+    if not unloaded_any:
+        ui.info("Conflicting modules (r8188eu / rtl8xxxu) were not loaded")
 
     return "success"
 
 
 def step_blacklist() -> str:
     """Returns 'success', 'repaired', or 'failed'."""
-    ui.phase(3, "Blacklisting driver")
-    ui.step_header("Step 3 · Blacklisting r8188eu")
+    ui.phase(3, "Blacklisting conflicting drivers")
+    ui.step_header("Step 3 · Blacklisting r8188eu & rtl8xxxu")
 
+    blacklist_lines = [
+        "blacklist r8188eu",
+        "blacklist rtl8xxxu",
+    ]
+
+    modprobe_dir = os.path.dirname(BLACKLIST_FILE)
+    os.makedirs(modprobe_dir, exist_ok=True)
+
+    existing_content = ""
     if os.path.isfile(BLACKLIST_FILE):
         try:
             with open(BLACKLIST_FILE, "r") as fh:
-                if BLACKLIST_LINE in fh.read():
-                    ui.info("r8188eu is already blacklisted — skipping")
-                    return "success"
+                existing_content = fh.read()
         except PermissionError:
-            ui.warn(f"Cannot read {BLACKLIST_FILE} — will overwrite")
+            pass
+
+    to_add = [line for line in blacklist_lines if line not in existing_content]
+
+    if not to_add:
+        ui.info("r8188eu and rtl8xxxu are already blacklisted — skipping")
+        return "success"
 
     try:
         with open(BLACKLIST_FILE, "a") as fh:
-            fh.write(f"{BLACKLIST_LINE}\n")
-        ui.success(f"Wrote '{BLACKLIST_LINE}' → {BLACKLIST_FILE}")
+            for line in to_add:
+                fh.write(f"{line}\n")
+        ui.success(f"Wrote {len(to_add)} blacklist rule(s) → {BLACKLIST_FILE}")
         return "success"
     except OSError as exc:
-        ui.warn(f"Failed to write blacklist file: {exc}")
-        ui.repair_animation("Repairing blacklist file permissions")
-
-        # Repair: create the directory if missing, then retry
-        modprobe_dir = os.path.dirname(BLACKLIST_FILE)
-        os.makedirs(modprobe_dir, exist_ok=True)
-        try:
-            with open(BLACKLIST_FILE, "w") as fh:
-                fh.write(f"{BLACKLIST_LINE}\n")
-            ui.repair("Blacklist file created after repair")
-            return "repaired"
-        except OSError as exc2:
-            ui.error(f"Still cannot write blacklist: {exc2}")
-            return "failed"
+        ui.error(f"Failed to write blacklist file: {exc}")
+        return "failed"
 
 
 def step_clone(repo_url: str | None = None) -> str:
@@ -797,13 +799,25 @@ def step_compile() -> str:
         _patch_makefile_includes()
         _apply_kernel_7_patches()
 
-        # ── Strategy 1: make with ccflags-y and subdir-ccflags-y ──
-        ui.info(f"Strategy 1: Compile [{repo_name}] with absolute include flags")
+        # ── Strategy 1: DKMS registration (dkms-install.sh / make dkms-install) ──
+        dkms_script = os.path.join(CLONE_DIR, "dkms-install.sh")
+        if os.path.isfile(dkms_script):
+            ui.info(f"Strategy 1: Install [{repo_name}] via DKMS (dkms-install.sh)")
+            with SpinnerContext("Running ./dkms-install.sh", spinner="bouncingBall"):
+                os.chmod(dkms_script, 0o755)
+                res_dkms = run_cmd(["./dkms-install.sh"], cwd=CLONE_DIR)
+            if res_dkms.returncode == 0:
+                ui.success(f"DKMS installation succeeded with {repo_name} (Strategy 1)")
+                run_cmd(["depmod", "-a"])
+                return "repaired"
+
+        # ── Strategy 2: make with ccflags-y and subdir-ccflags-y ──
+        ui.info(f"Strategy 2: Compile [{repo_name}] with absolute include flags")
         with SpinnerContext("Running make with absolute include paths", spinner="bouncingBall"):
             result = _try_compile()
 
         if result.returncode == 0:
-            ui.success(f"Compilation succeeded with {repo_name} (Strategy 1)")
+            ui.success(f"Compilation succeeded with {repo_name} (Strategy 2)")
             inst_res = _do_make_install()
             if inst_res in ("success", "repaired"):
                 return inst_res
