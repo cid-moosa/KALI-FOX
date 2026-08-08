@@ -423,14 +423,22 @@ def run_cmd(
     critical: bool = False,
     capture: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    """Execute a shell command and return the result. Never exits on its own."""
-    result = subprocess.run(
-        cmd,
-        cwd=cwd,
-        text=True,
-        capture_output=capture,
-    )
-    return result
+    """Execute a shell command and return the result. Gracefully catches FileNotFoundError if executable missing."""
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=cwd,
+            text=True,
+            capture_output=capture,
+        )
+        return result
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=127,
+            stdout="",
+            stderr=f"Command '{cmd[0]}' not found on system",
+        )
 
 
 def get_kernel_release() -> str:
@@ -973,17 +981,29 @@ def run_monitor_fix() -> None:
     ui.step_header("📡 Monitor Mode Auto-Fixer & Wifite Diagnostic")
 
     with SpinnerContext("Killing processes interfering with monitor mode", spinner="dots"):
-        run_cmd(["airmon-ng", "check", "kill"])
+        if shutil.which("airmon-ng"):
+            run_cmd(["airmon-ng", "check", "kill"])
+        else:
+            run_cmd(["pkill", "-f", "NetworkManager|wpa_supplicant|dhclient"])
     ui.success("Interfering processes killed (NetworkManager, wpa_supplicant)")
 
-    # Detect wireless interfaces
+    # Detect wireless interfaces using iw, iwconfig, or /sys/class/net/
     ifaces = []
     try:
-        r = run_cmd(["iwconfig"])
-        for line in (r.stdout or "").splitlines():
-            if line and not line.startswith(" ") and "no wireless" not in line:
-                iface_name = line.split()[0]
-                ifaces.append(iface_name)
+        if shutil.which("iw"):
+            r = run_cmd(["iw", "dev"])
+            for line in (r.stdout or "").splitlines():
+                if "Interface" in line:
+                    ifaces.append(line.split()[-1])
+        if not ifaces and shutil.which("iwconfig"):
+            r = run_cmd(["iwconfig"])
+            for line in (r.stdout or "").splitlines():
+                if line and not line.startswith(" ") and "no wireless" not in line:
+                    ifaces.append(line.split()[0])
+        if not ifaces and os.path.exists("/sys/class/net"):
+            for entry in os.listdir("/sys/class/net"):
+                if os.path.exists(f"/sys/class/net/{entry}/wireless") or entry.startswith("wlan"):
+                    ifaces.append(entry)
     except Exception:
         pass
 
@@ -996,16 +1016,23 @@ def run_monitor_fix() -> None:
     with SpinnerContext(f"Setting {target_iface} to Monitor Mode", spinner="bouncingBar"):
         run_cmd(["ip", "link", "set", target_iface, "down"])
         r1 = run_cmd(["iw", "dev", target_iface, "set", "type", "monitor"])
-        if r1.returncode != 0:
+        if r1.returncode != 0 and shutil.which("iwconfig"):
             run_cmd(["iwconfig", target_iface, "mode", "monitor"])
         run_cmd(["ip", "link", "set", target_iface, "up"])
 
     # Verify
-    r_check = run_cmd(["iwconfig", target_iface])
-    if "Monitor" in (r_check.stdout or ""):
-        ui.success(f"Interface {target_iface} is now in Monitor Mode! 📡")
-    else:
-        ui.warn(f"Interface {target_iface} set — verify with iwconfig")
+    if shutil.which("iw"):
+        r_check = run_cmd(["iw", "dev", target_iface, "info"])
+        if "type monitor" in (r_check.stdout or ""):
+            ui.success(f"Interface {target_iface} is now in Monitor Mode! 📡")
+        else:
+            ui.info(f"Interface {target_iface} mode updated")
+    elif shutil.which("iwconfig"):
+        r_check = run_cmd(["iwconfig", target_iface])
+        if "Monitor" in (r_check.stdout or ""):
+            ui.success(f"Interface {target_iface} is now in Monitor Mode! 📡")
+        else:
+            ui.info(f"Interface {target_iface} mode updated")
 
     print_wifite_diagnostic_guide(target_iface)
 
