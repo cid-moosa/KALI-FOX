@@ -62,6 +62,9 @@ REQUIRED_PACKAGES = [
     "dkms",
     "git",
     "wget",
+    "aircrack-ng",
+    "wifite",
+    "realtek-rtl8188eus-dkms",
 ]
 TOTAL_STEPS = 6
 MAX_RETRIES = 3
