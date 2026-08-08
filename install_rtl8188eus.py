@@ -318,8 +318,8 @@ class RichPrinter:
         }.get(variant, "white")
 
         for line in art.strip().splitlines():
-            self.console.print(f"  [bold {color}]{line}[/bold {color}]")
-            time.sleep(0.1)
+            self.console.print(Text(f"  {line}", style=f"bold {color}"))
+            time.sleep(0.08)
         self.console.print()
 
     def disclaimer(self) -> None:
@@ -801,25 +801,42 @@ def step_compile() -> str:
 
 
 def _do_make_install(status: str = "success") -> str:
-    """Run make install after successful compilation."""
+    """Run make install after successful compilation, with automatic direct file copy fallback."""
     with SpinnerContext("Running make install", spinner="arrow3"):
         result = run_cmd(["make", "install"], cwd=CLONE_DIR)
 
-    if result.returncode != 0:
-        ui.warn("make install failed — trying with DEPMOD=true")
-        ui.repair_animation("Retrying make install")
-        result = run_cmd(["make", "install", "DEPMOD=true"], cwd=CLONE_DIR)
+    if result.returncode == 0:
+        ui.success("Driver installed into kernel modules tree")
+        return status
 
-        if result.returncode != 0:
-            ui.error("make install failed")
-            if result.stderr:
-                for line in (result.stderr or "").strip().splitlines()[-5:]:
-                    ui.error(f"  {line}")
-            return "failed"
-        status = "repaired"
+    ui.warn("make install failed — attempting auto-repair direct file copy")
+    ui.repair_animation("Locating compiled kernel module file (.ko)")
 
-    ui.success("Driver installed into kernel modules tree")
-    return status
+    # Find 8188eu.ko anywhere in CLONE_DIR recursively
+    ko_files = []
+    for root, _, files in os.walk(CLONE_DIR):
+        for f in files:
+            if f.startswith("8188eu.ko"):
+                ko_files.append(os.path.join(root, f))
+
+    if not ko_files:
+        ui.error("No compiled 8188eu.ko file found in driver source directory")
+        return "failed"
+
+    src_ko = ko_files[0]
+    kernel = get_kernel_release()
+    dest_dir = f"/lib/modules/{kernel}/kernel/drivers/net/wireless/"
+    os.makedirs(dest_dir, exist_ok=True)
+    dest_path = os.path.join(dest_dir, os.path.basename(src_ko))
+
+    try:
+        shutil.copy2(src_ko, dest_path)
+        run_cmd(["depmod", "-a"])
+        ui.repair(f"Copied module directly → {dest_path}")
+        return "repaired"
+    except Exception as exc:
+        ui.error(f"Failed to copy module file to {dest_path}: {exc}")
+        return "failed"
 
 
 def step_load_module() -> str:
@@ -888,12 +905,13 @@ def main() -> None:
     # ── Auto-Update Check ──
     check_self_update()
 
-    # ── Animated intro ──
+    # ── Screen 1: Welcome & Specs Screen ──
+    if RICH_AVAILABLE and IS_TTY:
+        Console().clear()
     ui.header("KALI-FOX")
     ui.model_banner()
     ui.disclaimer()
 
-    # Typewriter system info
     kernel = get_kernel_release()
     python_ver = sys.version.split()[0]
     rich_status = "available ✓" if RICH_AVAILABLE else "not installed"
@@ -902,18 +920,21 @@ def main() -> None:
     ui.typewriter(f"  ▸ Python:  {python_ver}")
     ui.typewriter(f"  ▸ Rich:    {rich_status}")
     ui.typewriter(f"  ▸ Target:  RTL8188EUS (TL-WN722N V2/V3)")
-    ui.typewriter(f"  ▸ Mode:    Fully Automated · Self-Healing")
-
-    time.sleep(0.5)
+    ui.typewriter(f"  ▸ Mode:    Fully Automated · Self-Healing Multi-Phase Wizard")
 
     # Gate: root
     if not check_root():
         sys.exit(1)
 
     ui.success("Running as root — full access granted")
-    time.sleep(0.3)
+    time.sleep(1.5)
 
-    # ── Run pipeline — fully automated with auto-repair ──
+    # ── Screen 2: Installation Wizard Dashboard ──
+    if RICH_AVAILABLE and IS_TTY:
+        Console().clear()
+        Console().print(Rule("[bold bright_cyan]🦊 Phase 2: Driver Installation Wizard[/bold bright_cyan]", style="bright_magenta"))
+        Console().print()
+
     results: list[tuple[str, str]] = []
     steps: list[tuple[str, callable]] = [
         ("Install dependencies", step_install_dependencies),
@@ -936,13 +957,12 @@ def main() -> None:
             ui.error(f"Step '{label}' failed even after auto-repair — aborting.")
             break
 
-    # ── Finale ──
+    # ── Screen 3: Completion & Summary Screen ──
+    time.sleep(1.0)
     if RICH_AVAILABLE and IS_TTY:
-        console = Console()
-        console.print()
-        console.print(
-            Rule("[bold bright_cyan]Installation Complete[/bold bright_cyan]", style="bright_magenta")
-        )
+        Console().clear()
+        Console().print(Rule("[bold bright_cyan]🏁 Phase 3: Final Installation Summary[/bold bright_cyan]", style="bright_magenta"))
+        Console().print()
 
     ui.summary(results)
 
@@ -952,26 +972,20 @@ def main() -> None:
     if not any_failed:
         ui.fox("happy")
         if any_repaired:
-            ui.success("Installation complete — some steps needed auto-repair but everything worked out! 🦊")
+            ui.success("Installation complete — auto-repaired all build warnings! 🦊")
         else:
-            ui.success("Installation complete — clean run with no issues! 🦊")
+            ui.success("Installation complete — clean run with zero errors! 🦊")
 
         # Auto-reboot countdown
         if RICH_AVAILABLE and IS_TTY:
             console = Console()
             console.print()
-            console.print(
-                "  [bold bright_yellow]⚡ A reboot is recommended to load the new driver.[/bold bright_yellow]"
-            )
-            console.print(
-                "  [dim]The system will reboot in 10 seconds. Press Ctrl+C to cancel.[/dim]"
-            )
+            console.print("  [bold bright_yellow]⚡ A reboot is recommended to load the new driver.[/bold bright_yellow]")
+            console.print("  [dim]The system will reboot in 10 seconds. Press Ctrl+C to cancel.[/dim]")
             console.print()
             try:
                 for i in range(10, 0, -1):
-                    console.print(
-                        f"\r  [bold bright_magenta]Rebooting in {i}...[/bold bright_magenta]", end=""
-                    )
+                    console.print(f"\r  [bold bright_magenta]Rebooting in {i}s...[/bold bright_magenta]  ", end="")
                     time.sleep(1)
                 console.print()
                 subprocess.run(["reboot"])
@@ -982,13 +996,13 @@ def main() -> None:
             print("\n  A reboot is recommended. Rebooting in 10 seconds (Ctrl+C to cancel)...")
             try:
                 for i in range(10, 0, -1):
-                    print(f"\r  Rebooting in {i}...", end="")
+                    print(f"\r  Rebooting in {i}s...", end="")
                     time.sleep(1)
                 print()
                 subprocess.run(["reboot"])
             except KeyboardInterrupt:
                 print()
-                ui.info("Reboot cancelled — reboot manually later.")
+                ui.info("Reboot cancelled.")
     else:
         ui.fox("sad")
         ui.warn("Installation could not be completed even after auto-repair.")
