@@ -20,6 +20,7 @@ The main goal of this automation is to install drivers that allow **monitor mode
 - Auto-repairs build warnings and API mismatches on modern Kali kernels (6.8+ / 7.0+)
 - Deletes temporary build files and installer caches after installation
 - Includes `--fix-monitor` tool to automatically configure Monitor Mode & Wifite
+- Automatically reboots the system upon successful installation
 
 ---
 
@@ -70,12 +71,6 @@ sudo python3 install_rtl8188eus.py
 ```bash
 sudo python3 install_rtl8188eus.py --fix-monitor
 sudo wifite -i wlan0 --kill
-```
-
-### STEP 5: Reboot
-
-```bash
-sudo reboot
 ```
 
 ---
