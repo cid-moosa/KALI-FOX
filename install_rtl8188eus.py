@@ -296,8 +296,27 @@ def clone_repository() -> bool:
 def compile_and_install() -> bool:
     ui.step_header("Step 5 · Compiling & installing driver")
 
+    # ── Kernel 7.x fix: ensure the repo's include/ dir is on the compiler path ──
+    # The upstream Makefile may rely on $(src)/include being resolved by kbuild,
+    # but on newer kernels this sometimes fails.  We patch EXTRA_CFLAGS directly
+    # and also pass it on the make command line as a belt-and-suspenders fix.
+    include_dir = os.path.join(CLONE_DIR, "include")
+    makefile_path = os.path.join(CLONE_DIR, "Makefile")
+
+    if os.path.isdir(include_dir) and os.path.isfile(makefile_path):
+        with open(makefile_path, "r") as fh:
+            makefile_text = fh.read()
+        patch_line = f"EXTRA_CFLAGS += -I$(src)/include"
+        if patch_line not in makefile_text:
+            ui.info("Patching Makefile with include path for kernel compat")
+            with open(makefile_path, "a") as fh:
+                fh.write(f"\n# -- KALI-FOX patch: explicit include path for kernel 7.x --\n")
+                fh.write(f"{patch_line}\n")
+
+    extra_cflags = f"EXTRA_CFLAGS=-I{include_dir}"
+
     with SpinnerContext("Running make (this may take a few minutes)"):
-        result = run_cmd(["make"], cwd=CLONE_DIR, critical=False)
+        result = run_cmd(["make", extra_cflags], cwd=CLONE_DIR, critical=False)
 
     if result.returncode != 0:
         ui.error("Compilation failed — full output below:")
