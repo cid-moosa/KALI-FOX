@@ -662,50 +662,72 @@ def step_clone() -> str:
     return "failed"
 
 
+def _copy_headers_to_all_subdirs() -> None:
+    """Copy all header files from include/ directly into core/, hal/, os_dep/, etc.
+    This guarantees gcc finds headers like drv_types.h even if Kbuild sub-directory include paths break."""
+    include_dir = os.path.join(CLONE_DIR, "include")
+    if not os.path.isdir(include_dir):
+        return
+
+    headers = []
+    for root, _, files in os.walk(include_dir):
+        for f in files:
+            if f.endswith(".h"):
+                headers.append(os.path.join(root, f))
+
+    subdirs = [
+        CLONE_DIR,
+        os.path.join(CLONE_DIR, "core"),
+        os.path.join(CLONE_DIR, "hal"),
+        os.path.join(CLONE_DIR, "os_dep"),
+        os.path.join(CLONE_DIR, "hal", "phydm"),
+        os.path.join(CLONE_DIR, "hal", "rtl8188e"),
+    ]
+
+    for sdir in subdirs:
+        if os.path.isdir(sdir):
+            for h in headers:
+                dst = os.path.join(sdir, os.path.basename(h))
+                if not os.path.exists(dst):
+                    try:
+                        shutil.copy2(h, dst)
+                    except Exception:
+                        pass
+
+
 def _patch_makefile_includes() -> None:
-    """Patch the Makefile to ensure the include/ directory is found by the compiler."""
+    """Patch the Makefile with absolute include paths for kernel compat."""
     include_dir = os.path.join(CLONE_DIR, "include")
     makefile_path = os.path.join(CLONE_DIR, "Makefile")
 
     if not os.path.isdir(include_dir) or not os.path.isfile(makefile_path):
         return
 
+    patch_lines = [
+        f"EXTRA_CFLAGS += -I{include_dir} -I$(M)/include -I$(src)/include -I$(src)/../include",
+        f"USER_EXTRA_CFLAGS += -I{include_dir} -I$(M)/include -I$(src)/include -I$(src)/../include",
+        f"ccflags-y += -I{include_dir} -I$(M)/include -I$(src)/include -I$(src)/../include",
+    ]
+
     with open(makefile_path, "r") as fh:
         makefile_text = fh.read()
 
-    patch_line = "EXTRA_CFLAGS += -I$(src)/include"
-    if patch_line not in makefile_text:
-        ui.info("Patching Makefile with include path for kernel compat")
-        with open(makefile_path, "a") as fh:
-            fh.write(f"\n# -- KALI-FOX patch: explicit include path --\n")
-            fh.write(f"{patch_line}\n")
-
-
-def _create_include_symlinks() -> None:
-    """Create symlinks from source subdirectories to header files in include/."""
-    include_dir = os.path.join(CLONE_DIR, "include")
-    if not os.path.isdir(include_dir):
-        return
-
-    header_files = glob.glob(os.path.join(include_dir, "*.h"))
-    source_dirs = ["core", "hal", "os_dep"]
-
-    for src_dir_name in source_dirs:
-        src_dir = os.path.join(CLONE_DIR, src_dir_name)
-        if not os.path.isdir(src_dir):
-            continue
-        for header in header_files:
-            link_path = os.path.join(src_dir, os.path.basename(header))
-            if not os.path.exists(link_path):
-                try:
-                    os.symlink(header, link_path)
-                except OSError:
-                    pass  # best effort
+    with open(makefile_path, "a") as fh:
+        fh.write("\n# -- KALI-FOX patch: explicit absolute include paths --\n")
+        for line in patch_lines:
+            if line not in makefile_text:
+                fh.write(f"{line}\n")
 
 
 def _try_compile(extra_flags: list[str] | None = None) -> subprocess.CompletedProcess[str]:
-    """Run make with optional extra flags."""
-    cmd = ["make"]
+    """Run make with absolute include paths."""
+    include_dir = os.path.join(CLONE_DIR, "include")
+    cmd = [
+        "make",
+        f"USER_EXTRA_CFLAGS=-I{include_dir} -I$(M)/include",
+        f"EXTRA_CFLAGS=-I{include_dir} -I$(M)/include",
+        f"KCFLAGS=-I{include_dir} -I$(M)/include",
+    ]
     if extra_flags:
         cmd.extend(extra_flags)
     return run_cmd(cmd, cwd=CLONE_DIR)
@@ -719,28 +741,32 @@ def step_compile() -> str:
 
     include_dir = os.path.join(CLONE_DIR, "include")
 
-    # ── Pre-patch: always apply Makefile include fix ──
+    # ── Pre-patch: Copy headers directly + patch Makefile ──
+    _copy_headers_to_all_subdirs()
     _patch_makefile_includes()
 
-    # ── Strategy 1: make with KCFLAGS (additive, doesn't override EXTRA_CFLAGS) ──
-    ui.info("Strategy 1: Compile with KCFLAGS include path")
-    with SpinnerContext("Running make with KCFLAGS", spinner="bouncingBall"):
-        result = _try_compile([f"KCFLAGS=-I{include_dir}"])
+    # ── Strategy 1: make with absolute include paths ──
+    ui.info("Strategy 1: Compile with absolute include flags")
+    with SpinnerContext("Running make with absolute include paths", spinner="bouncingBall"):
+        result = _try_compile()
 
     if result.returncode == 0:
         ui.success("Compilation succeeded (Strategy 1)")
         return _do_make_install()
 
-    # ── Strategy 2: make clean + retry with both KCFLAGS and CFLAGS_MODULE ──
+    # ── Strategy 2: make clean + retry with CFLAGS_MODULE ──
     ui.warn("Strategy 1 failed — trying Strategy 2")
     ui.repair_animation("Cleaning build and retrying with CFLAGS_MODULE")
 
     with SpinnerContext("Running make clean", spinner="toggle"):
         run_cmd(["make", "clean"], cwd=CLONE_DIR)
 
+    # Copy headers again just in case make clean removed anything
+    _copy_headers_to_all_subdirs()
+
     ui.info("Strategy 2: Compile with CFLAGS_MODULE")
     with SpinnerContext("Recompiling with CFLAGS_MODULE", spinner="bouncingBall"):
-        result = _try_compile([f"CFLAGS_MODULE=-I{include_dir}"])
+        result = _try_compile([f"CFLAGS_MODULE=-I{include_dir} -I{CLONE_DIR}/core"])
 
     if result.returncode == 0:
         ui.repair("Compilation succeeded (Strategy 2 — CFLAGS_MODULE)")
@@ -882,12 +908,34 @@ def step_load_module() -> str:
     return "repaired"  # not fatal; reboot will fix it
 
 
+def check_self_update() -> None:
+    """If running inside a git repository, automatically update to latest origin/master if behind."""
+    if os.path.isdir(".git") and "--no-update" not in sys.argv:
+        try:
+            r = subprocess.run(["git", "fetch", "origin", "master"], capture_output=True, text=True, timeout=8)
+            if r.returncode == 0:
+                log_check = subprocess.run(["git", "rev-list", "HEAD..origin/master", "--count"], capture_output=True, text=True, timeout=5)
+                behind_count = int(log_check.stdout.strip() or "0")
+                if behind_count > 0:
+                    ui.info(f"Self-Update: New version detected ({behind_count} commit(s) behind origin/master).")
+                    ui.repair_animation("Syncing latest code from GitHub")
+                    subprocess.run(["git", "reset", "--hard", "origin/master"], capture_output=True, text=True)
+                    ui.success("Self-Update successful! Restarting script...")
+                    time.sleep(1)
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception:
+            pass
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     # Graceful Ctrl+C
     signal.signal(signal.SIGINT, lambda *_: (ui.warn("\nInterrupted by user"), sys.exit(130)))
     atexit.register(cleanup_clone_dir)
+
+    # ── Auto-Update Check ──
+    check_self_update()
 
     # ── Animated intro ──
     ui.header("KALI-FOX")
