@@ -47,7 +47,7 @@ except ImportError:
 # ── Constants ─────────────────────────────────────────────────────────────────
 REPO_URL = "https://github.com/aircrack-ng/rtl8188eus.git"
 REPO_TARBALL = "https://github.com/aircrack-ng/rtl8188eus/archive/refs/heads/master.tar.gz"
-CLONE_DIR = "/tmp/rtl8188eus"
+CLONE_DIR = "/usr/src/rtl8188eus"
 BLACKLIST_FILE = "/etc/modprobe.d/realtek.conf"
 BLACKLIST_LINE = "blacklist r8188eu"
 REQUIRED_PACKAGES = [
@@ -682,51 +682,61 @@ def _copy_headers_to_all_subdirs() -> None:
         os.path.join(CLONE_DIR, "os_dep"),
         os.path.join(CLONE_DIR, "hal", "phydm"),
         os.path.join(CLONE_DIR, "hal", "rtl8188e"),
+        os.path.join(CLONE_DIR, "include"),
     ]
 
     for sdir in subdirs:
-        if os.path.isdir(sdir):
-            for h in headers:
-                dst = os.path.join(sdir, os.path.basename(h))
-                if not os.path.exists(dst):
-                    try:
-                        shutil.copy2(h, dst)
-                    except Exception:
-                        pass
+        os.makedirs(sdir, exist_ok=True)
+        for h in headers:
+            dst = os.path.join(sdir, os.path.basename(h))
+            try:
+                shutil.copy2(h, dst)
+            except Exception:
+                pass
 
 
 def _patch_makefile_includes() -> None:
-    """Patch the Makefile with absolute include paths for kernel compat."""
+    """Patch Makefile and create Kbuild with ccflags-y and subdir-ccflags-y for modern Kbuild."""
     include_dir = os.path.join(CLONE_DIR, "include")
     makefile_path = os.path.join(CLONE_DIR, "Makefile")
+    kbuild_path = os.path.join(CLONE_DIR, "Kbuild")
 
-    if not os.path.isdir(include_dir) or not os.path.isfile(makefile_path):
+    if not os.path.isdir(include_dir):
         return
 
     patch_lines = [
-        f"EXTRA_CFLAGS += -I{include_dir} -I$(M)/include -I$(src)/include -I$(src)/../include",
-        f"USER_EXTRA_CFLAGS += -I{include_dir} -I$(M)/include -I$(src)/include -I$(src)/../include",
-        f"ccflags-y += -I{include_dir} -I$(M)/include -I$(src)/include -I$(src)/../include",
+        f"ccflags-y += -I{include_dir} -I{CLONE_DIR} -I$(M)/include -I$(src)/include -I$(src)/../include",
+        f"subdir-ccflags-y += -I{include_dir} -I{CLONE_DIR} -I$(M)/include -I$(src)/include -I$(src)/../include",
+        f"EXTRA_CFLAGS += -I{include_dir} -I{CLONE_DIR} -I$(M)/include -I$(src)/include -I$(src)/../include",
+        f"USER_EXTRA_CFLAGS += -I{include_dir} -I{CLONE_DIR} -I$(M)/include -I$(src)/include -I$(src)/../include",
     ]
 
-    with open(makefile_path, "r") as fh:
-        makefile_text = fh.read()
+    if os.path.isfile(makefile_path):
+        with open(makefile_path, "r") as fh:
+            makefile_text = fh.read()
 
-    with open(makefile_path, "a") as fh:
-        fh.write("\n# -- KALI-FOX patch: explicit absolute include paths --\n")
-        for line in patch_lines:
-            if line not in makefile_text:
-                fh.write(f"{line}\n")
+        with open(makefile_path, "a") as fh:
+            fh.write("\n# -- KALI-FOX patch: ccflags-y & subdir-ccflags-y --\n")
+            for line in patch_lines:
+                if line not in makefile_text:
+                    fh.write(f"{line}\n")
+
+    # Create explicit Kbuild file to ensure subdirectories inherit flags in Kbuild
+    with open(kbuild_path, "w") as fh:
+        fh.write("\n".join(patch_lines) + "\n")
 
 
 def _try_compile(extra_flags: list[str] | None = None) -> subprocess.CompletedProcess[str]:
-    """Run make with absolute include paths."""
+    """Run make with ccflags-y and subdir-ccflags-y."""
     include_dir = os.path.join(CLONE_DIR, "include")
+    inc_flag = f"-I{include_dir} -I{CLONE_DIR} -I$(M)/include"
     cmd = [
         "make",
-        f"USER_EXTRA_CFLAGS=-I{include_dir} -I$(M)/include",
-        f"EXTRA_CFLAGS=-I{include_dir} -I$(M)/include",
-        f"KCFLAGS=-I{include_dir} -I$(M)/include",
+        f"ccflags-y={inc_flag}",
+        f"subdir-ccflags-y={inc_flag}",
+        f"USER_EXTRA_CFLAGS={inc_flag}",
+        f"EXTRA_CFLAGS={inc_flag}",
+        f"KCFLAGS={inc_flag}",
     ]
     if extra_flags:
         cmd.extend(extra_flags)
