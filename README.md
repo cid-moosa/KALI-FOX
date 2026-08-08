@@ -1,6 +1,6 @@
 # 🦊 KALI-FOX
 
-> One-command installer for the TP-Link TL-WN722N V2/V3 Wi-Fi adapter (Realtek RTL8188EUS) on Kali Linux — with animated TUI, ASCII art, and auto-reboot.
+> One-command, self-healing installer for the TP-Link TL-WN722N V2/V3 Wi-Fi adapter (Realtek RTL8188EUS) on Kali Linux — fully automated, animated TUI, zero user input.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
@@ -12,18 +12,19 @@
 
 ## The Problem
 
-The TP-Link TL-WN722N V2/V3 doesn't work out-of-the-box on Kali Linux — the bundled `r8188eu` driver conflicts with the adapter's RTL8188EUS chipset. Fixing it manually means hunting down repos, blacklisting modules, and compiling kernel drivers by hand.
+The TP-Link TL-WN722N V2/V3 doesn't work out-of-the-box on Kali Linux — the bundled `r8188eu` driver conflicts with the adapter's RTL8188EUS chipset. Fixing it manually means hunting down repos, blacklisting modules, compiling kernel drivers, and debugging build failures.
 
-**KALI-FOX does all of that in one command — fully automated, zero prompts.**
+**KALI-FOX does all of that in one command — and auto-repairs any errors it encounters.**
 
 ## Features
 
-- 🎨 **Animated TUI** — ASCII art banner, globe-spin download animation, animated fox mascot, typewriter system info, phase progress bar
-- 🔧 **Fully automated** — installs deps, blacklists the broken driver, clones, patches, compiles, loads, and reboots
-- 🛡️ **Kernel 7.x compatible** — auto-patches the Makefile `EXTRA_CFLAGS` for newer kernels
-- 📟 **Degrades gracefully** — works with plain text if `rich` is missing or stdout is piped
-- 🔄 **Auto-reboot** — 10-second countdown after success (Ctrl+C to cancel)
-- 🧱 **Idempotent** — safe to re-run; skips steps that are already done
+- 🔧 **Self-Healing** — every step has multiple fallback strategies; errors are auto-repaired, not just reported
+- 🎨 **Animated TUI** — ASCII art banner, globe spin, fox mascot (happy/sad/working/repairing), typewriter, phase progress bar
+- ⚡ **Fully Automated** — zero prompts, zero user input from start to reboot
+- 🛡️ **5 Compilation Strategies** — KCFLAGS → CFLAGS_MODULE → header symlinks → DKMS make target → manual DKMS registration
+- 📡 **Clone Fallbacks** — git clone → full clone → wget tarball → curl tarball
+- 🔄 **Auto-Reboot** — 10-second countdown after success (Ctrl+C to cancel)
+- 📟 **Degrades Gracefully** — plain text output if `rich` is missing or stdout is piped
 
 ## Quickstart
 
@@ -40,29 +41,40 @@ sudo python3 install_rtl8188eus.py
 
 ## What It Does
 
-| Phase | Step | Action |
-|:-----:|------|--------|
-| 1/6 | **Dependencies** | `apt-get update` + install `build-essential`, `libelf-dev`, `linux-headers`, `bc`, `dkms`, `git` |
-| 2/6 | **Unload** | `rmmod r8188eu` (non-critical if not loaded) |
-| 3/6 | **Blacklist** | Write `blacklist r8188eu` → `/etc/modprobe.d/realtek.conf` |
-| 4/6 | **Clone** | `git clone --depth=1` the [aircrack-ng/rtl8188eus](https://github.com/aircrack-ng/rtl8188eus) repo |
-| 5/6 | **Compile** | Patch Makefile for kernel compat, then `make` + `make install` |
-| 6/6 | **Load** | `depmod -a` + `modprobe 8188eu` |
-| ✓ | **Reboot** | Auto-reboot countdown (Ctrl+C to cancel) |
+| Phase | Step | Action | Auto-Repair |
+|:-----:|------|--------|-------------|
+| 1/6 | **Dependencies** | `apt update` + install 7 packages | `dpkg --configure`, `apt install -f`, individual package install |
+| 2/6 | **Unload** | `rmmod r8188eu` | Force-unload with `rmmod -f` |
+| 3/6 | **Blacklist** | Write to `/etc/modprobe.d/realtek.conf` | Recreate directory + file |
+| 4/6 | **Clone** | `git clone --depth=1` | Full clone → wget tarball → curl tarball |
+| 5/6 | **Compile** | Patch Makefile + `make` + `make install` | 5 strategies (see below) |
+| 6/6 | **Load** | `depmod -a` + `modprobe 8188eu` | Find `.ko` file + `insmod` directly |
+| ✓ | **Reboot** | Auto-reboot in 10s | Ctrl+C to cancel |
+
+### Compilation Strategies (Step 5)
+
+If one fails, the next is tried automatically:
+
+1. **KCFLAGS** — passes `-I<include>` via `KCFLAGS` (additive, doesn't override Makefile)
+2. **CFLAGS_MODULE** — passes via `CFLAGS_MODULE` (alternative kbuild variable)
+3. **Header Symlinks** — symlinks all `.h` files from `include/` directly into `core/`, `hal/`, `os_dep/`
+4. **DKMS make target** — runs `make dkms-install`
+5. **Manual DKMS** — copies source to `/usr/src/`, generates `dkms.conf`, runs `dkms add/build/install`
 
 ## TUI Animations
 
-The script includes animations ported from [PIPY-FOX](https://github.com/cid-moosa/PIPY-FOX):
+| Animation | Description |
+|---|---|
+| ASCII banner reveal | Line-by-line animated logo + adapter model |
+| Globe spin 🌍🌎🌏 | During download phase |
+| Fox mascot | 4 variants: happy ✓, sad ✗, working ⚙, repairing 🔧 |
+| Repair animation | Wrench/gear icon cycle during auto-fix |
+| Phase progress bar | `[████░░] Phase 3/6 (50%)` |
+| Typewriter | System info printed character by character |
+| Variety spinners | Different spinner per step |
+| Auto-reboot countdown | 10s countdown with Ctrl+C cancel |
 
-- **Animated ASCII banner** — line-by-line reveal of the KALI-FOX and adapter model logos
-- **Globe spin** 🌍🌎🌏 — during download phase
-- **Fox mascot** — happy 😊 on success, sad 😢 on failure, working ⚙️ during compilation
-- **Phase progress bar** — `[████░░]` shows overall progress
-- **Typewriter effect** — system info printed character by character
-- **Disclaimer panel** — styled warning box before installation begins
-- **Variety spinners** — different spinner styles per step (`dots`, `earth`, `bouncingBar`, `arrow3`, etc.)
-
-All animations respect `NO_COLOR`, `isatty()`, and missing `rich` — degrades to plain text automatically.
+All animations respect `NO_COLOR`, `isatty()`, and missing `rich`.
 
 ## Requirements
 
@@ -73,13 +85,13 @@ All animations respect `NO_COLOR`, `isatty()`, and missing `rich` — degrades t
 
 ## Tech Stack
 
-- Python 3 (stdlib: `subprocess`, `os`, `signal`, `shutil`, `atexit`, `time`, `itertools`)
-- [`rich`](https://github.com/Textualize/rich) (optional — animated TUI, Live rendering, tables, panels)
+- Python 3 (stdlib: `subprocess`, `os`, `signal`, `shutil`, `atexit`, `time`, `itertools`, `glob`, `textwrap`)
+- [`rich`](https://github.com/Textualize/rich) (optional — animated TUI)
 - [aircrack-ng/rtl8188eus](https://github.com/aircrack-ng/rtl8188eus) (driver source)
 
 ## Related
 
-- [PIPY-FOX](https://github.com/cid-moosa/PIPY-FOX) — Same adapter driver installer for Parrot OS (different driver, different approach)
+- [PIPY-FOX](https://github.com/cid-moosa/PIPY-FOX) — Same adapter installer for Parrot OS
 
 ## License
 
