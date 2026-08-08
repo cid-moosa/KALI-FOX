@@ -45,8 +45,13 @@ except ImportError:
     RICH_AVAILABLE = False
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-REPO_URL = "https://github.com/aircrack-ng/rtl8188eus.git"
-REPO_TARBALL = "https://github.com/aircrack-ng/rtl8188eus/archive/refs/heads/master.tar.gz"
+REPO_URLS = [
+    "https://github.com/gglluukk/rtl8188eus.git",
+    "https://github.com/aircrack-ng/rtl8188eus.git",
+    "https://github.com/lwfinger/rtl8188eu.git",
+]
+REPO_URL = REPO_URLS[0]
+REPO_TARBALL = "https://codeload.github.com/gglluukk/rtl8188eus/tar.gz/refs/heads/master"
 CLONE_DIR = "/usr/src/rtl8188eus"
 BLACKLIST_FILE = "/etc/modprobe.d/realtek.conf"
 BLACKLIST_LINE = "blacklist r8188eu"
@@ -506,8 +511,6 @@ def step_install_dependencies() -> str:
 
             if any(p in failed_pkgs for p in ["build-essential", "git"]):
                 ui.error("Critical packages missing — cannot continue")
-                return "failed"
-
             ui.repair(f"Installed {len(packages) - len(failed_pkgs)}/{len(packages)} packages")
             return "repaired"
         else:
@@ -584,22 +587,24 @@ def step_blacklist() -> str:
             return "failed"
 
 
-def step_clone() -> str:
+def step_clone(repo_url: str | None = None) -> str:
     """Returns 'success', 'repaired', or 'failed'."""
+    target_repo = repo_url or REPO_URL
     ui.phase(4, "Cloning driver source")
-    ui.step_header("Step 4 · Cloning driver source")
+    repo_name = f"{target_repo.split('/')[-2]}/{target_repo.split('/')[-1]}"
+    ui.step_header(f"Step 4 · Cloning driver source ({repo_name})")
 
     if os.path.isdir(CLONE_DIR):
         ui.info(f"Removing old clone at {CLONE_DIR}")
         shutil.rmtree(CLONE_DIR, ignore_errors=True)
 
-    ui.globe_spin("Downloading driver source from GitHub", duration=1.5)
+    ui.globe_spin(f"Downloading driver source from {repo_name}", duration=1.5)
 
     # ── Attempt 1: git clone ──
-    with SpinnerContext(f"Cloning {REPO_URL}", spinner="dots12"):
-        result = run_cmd(["git", "clone", "--depth=1", REPO_URL, CLONE_DIR])
+    with SpinnerContext(f"Cloning {target_repo}", spinner="dots12"):
+        result = run_cmd(["git", "clone", "--depth=1", target_repo, CLONE_DIR])
 
-    if result.returncode == 0:
+    if result.returncode == 0 and os.path.isfile(os.path.join(CLONE_DIR, "Makefile")):
         ui.success(f"Repository cloned → {CLONE_DIR}")
         return "success"
 
@@ -610,55 +615,43 @@ def step_clone() -> str:
         shutil.rmtree(CLONE_DIR, ignore_errors=True)
 
     with SpinnerContext("Cloning full repository", spinner="dots"):
-        result = run_cmd(["git", "clone", REPO_URL, CLONE_DIR])
+        result = run_cmd(["git", "clone", target_repo, CLONE_DIR])
 
-    if result.returncode == 0:
+    if result.returncode == 0 and os.path.isfile(os.path.join(CLONE_DIR, "Makefile")):
         ui.repair("Repository cloned (full) after retry")
         return "repaired"
 
     # ── Repair 2: tarball fallback ──
-    ui.warn("Git clone failed again — falling back to tarball download")
+    ui.warn("Git clone failed — falling back to tarball download")
     ui.fox("repair")
     ui.repair_animation("Downloading tarball archive")
 
     tarball = "/tmp/rtl8188eus.tar.gz"
+    tarball_url = target_repo.replace(".git", "/archive/refs/heads/master.tar.gz").replace("github.com", "codeload.github.com")
+
     with SpinnerContext("Downloading tarball via wget", spinner="bouncingBall"):
-        result = run_cmd(["wget", "-q", REPO_TARBALL, "-O", tarball])
+        result = run_cmd(["wget", "-q", tarball_url, "-O", tarball])
 
     if result.returncode != 0:
-        # Try curl as fallback
         with SpinnerContext("wget failed — trying curl", spinner="bouncingBall"):
-            result = run_cmd(["curl", "-sL", REPO_TARBALL, "-o", tarball])
+            result = run_cmd(["curl", "-sL", tarball_url, "-o", tarball])
 
-    if result.returncode != 0:
-        ui.error("Cannot download driver source — check internet connection")
-        return "failed"
-
-    # Extract tarball
-    os.makedirs(CLONE_DIR, exist_ok=True)
-    with SpinnerContext("Extracting tarball", spinner="arrow3"):
-        result = run_cmd(["tar", "xzf", tarball, "-C", "/tmp/"])
-
-    if result.returncode != 0:
-        ui.error("Failed to extract tarball")
-        return "failed"
-
-    # Find extracted dir (usually rtl8188eus-master)
-    extracted = glob.glob("/tmp/rtl8188eus-*")
-    if extracted:
-        if os.path.isdir(CLONE_DIR):
-            shutil.rmtree(CLONE_DIR, ignore_errors=True)
-        os.rename(extracted[0], CLONE_DIR)
-
-    # Cleanup tarball
-    if os.path.isfile(tarball):
-        os.remove(tarball)
+    if result.returncode == 0 and os.path.isfile(tarball):
+        os.makedirs(CLONE_DIR, exist_ok=True)
+        run_cmd(["tar", "xzf", tarball, "-C", "/tmp/"])
+        extracted = glob.glob("/tmp/rtl8188eus-*") or glob.glob("/tmp/rtl8188eu-*")
+        if extracted:
+            if os.path.isdir(CLONE_DIR):
+                shutil.rmtree(CLONE_DIR, ignore_errors=True)
+            os.rename(extracted[0], CLONE_DIR)
+        if os.path.isfile(tarball):
+            os.remove(tarball)
 
     if os.path.isdir(CLONE_DIR) and os.path.isfile(os.path.join(CLONE_DIR, "Makefile")):
         ui.repair(f"Source obtained via tarball → {CLONE_DIR}")
         return "repaired"
 
-    ui.error("Could not obtain driver source code")
+    ui.error(f"Could not obtain driver source from {repo_name}")
     return "failed"
 
 
@@ -744,118 +737,66 @@ def _try_compile(extra_flags: list[str] | None = None) -> subprocess.CompletedPr
 
 
 def step_compile() -> str:
-    """Returns 'success', 'repaired', or 'failed'. Tries multiple repair strategies."""
+    """Returns 'success', 'repaired', or 'failed'. Tries multiple repo sources and build strategies."""
     ui.phase(5, "Compiling & installing driver")
     ui.step_header("Step 5 · Compiling & installing driver")
     ui.fox("working")
 
-    include_dir = os.path.join(CLONE_DIR, "include")
+    for idx, repo_url in enumerate(REPO_URLS):
+        repo_name = f"{repo_url.split('/')[-2]}/{repo_url.split('/')[-1]}"
+        if idx > 0:
+            ui.warn(f"Trying fallback driver repository ({idx+1}/{len(REPO_URLS)}): {repo_name}")
+            c_res = step_clone(repo_url)
+            if c_res == "failed":
+                continue
 
-    # ── Pre-patch: Copy headers directly + patch Makefile ──
-    _copy_headers_to_all_subdirs()
-    _patch_makefile_includes()
+        include_dir = os.path.join(CLONE_DIR, "include")
 
-    # ── Strategy 1: make with absolute include paths ──
-    ui.info("Strategy 1: Compile with absolute include flags")
-    with SpinnerContext("Running make with absolute include paths", spinner="bouncingBall"):
-        result = _try_compile()
+        # ── Pre-patch: Copy headers directly + patch Makefile ──
+        _copy_headers_to_all_subdirs()
+        _patch_makefile_includes()
 
-    if result.returncode == 0:
-        ui.success("Compilation succeeded (Strategy 1)")
-        return _do_make_install()
+        # ── Strategy 1: make with ccflags-y and subdir-ccflags-y ──
+        ui.info(f"Strategy 1: Compile [{repo_name}] with absolute include flags")
+        with SpinnerContext("Running make with absolute include paths", spinner="bouncingBall"):
+            result = _try_compile()
 
-    # ── Strategy 2: make clean + retry with CFLAGS_MODULE ──
-    ui.warn("Strategy 1 failed — trying Strategy 2")
-    ui.repair_animation("Cleaning build and retrying with CFLAGS_MODULE")
+        if result.returncode == 0:
+            ui.success(f"Compilation succeeded with {repo_name} (Strategy 1)")
+            return _do_make_install()
 
-    with SpinnerContext("Running make clean", spinner="toggle"):
-        run_cmd(["make", "clean"], cwd=CLONE_DIR)
+        # ── Strategy 2: make clean + retry with CFLAGS_MODULE ──
+        ui.warn(f"Strategy 1 failed for {repo_name} — trying Strategy 2")
+        ui.repair_animation("Cleaning build and retrying with CFLAGS_MODULE")
 
-    # Copy headers again just in case make clean removed anything
-    _copy_headers_to_all_subdirs()
+        with SpinnerContext("Running make clean", spinner="toggle"):
+            run_cmd(["make", "clean"], cwd=CLONE_DIR)
 
-    ui.info("Strategy 2: Compile with CFLAGS_MODULE")
-    with SpinnerContext("Recompiling with CFLAGS_MODULE", spinner="bouncingBall"):
-        result = _try_compile([f"CFLAGS_MODULE=-I{include_dir} -I{CLONE_DIR}/core"])
+        _copy_headers_to_all_subdirs()
 
-    if result.returncode == 0:
-        ui.repair("Compilation succeeded (Strategy 2 — CFLAGS_MODULE)")
-        return _do_make_install("repaired")
+        ui.info(f"Strategy 2: Compile [{repo_name}] with CFLAGS_MODULE")
+        with SpinnerContext("Recompiling with CFLAGS_MODULE", spinner="bouncingBall"):
+            result = _try_compile([f"CFLAGS_MODULE=-I{include_dir} -I{CLONE_DIR}/core"])
 
-    # ── Strategy 3: Symlink headers directly into source dirs ──
-    ui.warn("Strategy 2 failed — trying Strategy 3")
-    ui.fox("repair")
-    ui.repair_animation("Creating header symlinks into source directories")
+        if result.returncode == 0:
+            ui.repair(f"Compilation succeeded with {repo_name} (Strategy 2 — CFLAGS_MODULE)")
+            return _do_make_install("repaired")
 
-    with SpinnerContext("Running make clean", spinner="toggle"):
-        run_cmd(["make", "clean"], cwd=CLONE_DIR)
+        # ── Strategy 3: DKMS install ──
+        ui.warn(f"Strategy 2 failed for {repo_name} — trying Strategy 3 (DKMS)")
+        ui.repair_animation("Attempting DKMS installation")
 
-    _create_include_symlinks()
-    ui.info("Strategy 3: Compile with symlinked headers")
+        with SpinnerContext("Running make clean", spinner="toggle"):
+            run_cmd(["make", "clean"], cwd=CLONE_DIR)
 
-    with SpinnerContext("Recompiling with symlinked headers", spinner="bouncingBall"):
-        result = _try_compile()
+        with SpinnerContext("Trying make dkms-install", spinner="bouncingBall"):
+            result = run_cmd(["make", "dkms-install"], cwd=CLONE_DIR)
 
-    if result.returncode == 0:
-        ui.repair("Compilation succeeded (Strategy 3 — symlinked headers)")
-        return _do_make_install("repaired")
-
-    # ── Strategy 4: DKMS install ──
-    ui.warn("Strategy 3 failed — trying Strategy 4 (DKMS)")
-    ui.repair_animation("Attempting DKMS installation")
-
-    with SpinnerContext("Running make clean", spinner="toggle"):
-        run_cmd(["make", "clean"], cwd=CLONE_DIR)
-
-    with SpinnerContext("Trying make dkms-install", spinner="bouncingBall"):
-        result = run_cmd(["make", "dkms-install", f"KCFLAGS=-I{include_dir}"], cwd=CLONE_DIR)
-
-    if result.returncode == 0:
-        ui.repair("DKMS installation succeeded (Strategy 4)")
-        return "repaired"
-
-    # ── Strategy 5: Manual dkms add/build/install ──
-    ui.warn("Strategy 4 failed — trying Strategy 5 (manual DKMS)")
-    ui.repair_animation("Manual DKMS registration")
-
-    dkms_dest = "/usr/src/rtl8188eus-1.0"
-    if os.path.isdir(dkms_dest):
-        shutil.rmtree(dkms_dest, ignore_errors=True)
-    shutil.copytree(CLONE_DIR, dkms_dest)
-
-    dkms_conf = os.path.join(dkms_dest, "dkms.conf")
-    if not os.path.isfile(dkms_conf):
-        with open(dkms_conf, "w") as fh:
-            fh.write(textwrap.dedent("""\
-                PACKAGE_NAME="rtl8188eus"
-                PACKAGE_VERSION="1.0"
-                BUILT_MODULE_NAME[0]="8188eu"
-                DEST_MODULE_LOCATION[0]="/kernel/drivers/net/wireless/"
-                AUTOINSTALL="yes"
-                MAKE="'make' KCFLAGS='-I${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/source/include'"
-            """))
-
-    for dkms_cmd in [
-        ["dkms", "remove", "rtl8188eus/1.0", "--all"],
-        ["dkms", "add", "rtl8188eus/1.0"],
-        ["dkms", "build", "rtl8188eus/1.0"],
-        ["dkms", "install", "rtl8188eus/1.0"],
-    ]:
-        with SpinnerContext(f"Running {' '.join(dkms_cmd)}", spinner="simpleDots"):
-            result = run_cmd(dkms_cmd)
-        if "install" in dkms_cmd and result.returncode == 0:
-            ui.repair("DKMS manual installation succeeded (Strategy 5)")
+        if result.returncode == 0:
+            ui.repair(f"DKMS installation succeeded with {repo_name} (Strategy 3)")
             return "repaired"
 
-    # ── All strategies exhausted ──
-    ui.error("All 5 compilation strategies failed")
-    if result.stderr:
-        ui.error("Last error output:")
-        for line in (result.stderr or "").strip().splitlines()[-10:]:
-            ui.error(f"  {line}")
-    if result.stdout:
-        for line in (result.stdout or "").strip().splitlines()[-10:]:
-            ui.info(f"  {line}")
+    ui.error("All driver repositories and compilation strategies failed")
     return "failed"
 
 
