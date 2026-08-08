@@ -83,11 +83,34 @@ All animations respect `NO_COLOR`, `isatty()`, and missing `rich`.
 - **Privileges:** Must run as root (`sudo`)
 - **Hardware:** TP-Link TL-WN722N V2 or V3 (RTL8188EUS chipset)
 
-## Tech Stack
+## Enable Monitor Mode & Test Packet Injection
 
-- Python 3 (stdlib: `subprocess`, `os`, `signal`, `shutil`, `atexit`, `time`, `itertools`, `glob`, `textwrap`)
-- [`rich`](https://github.com/Textualize/rich) (optional — animated TUI)
-- [aircrack-ng/rtl8188eus](https://github.com/aircrack-ng/rtl8188eus) (driver source)
+After installing the driver and rebooting, plug in your TP-Link TL-WN722N V2/V3 adapter and run:
+
+1. **Identify your wireless interface name:**
+   ```bash
+   iwconfig
+   ```
+
+2. **Kill conflicting processes and set monitor mode (assuming interface `wlan0`):**
+   ```bash
+   sudo ifconfig wlan0 down
+   sudo airmon-ng check kill
+   sudo iwconfig wlan0 mode monitor
+   sudo ifconfig wlan0 up
+   ```
+
+3. **Verify monitor mode:**
+   ```bash
+   iwconfig
+   ```
+   The output for `wlan0` should display `Mode:Monitor`.
+
+4. **Test packet injection:**
+   ```bash
+   sudo aireplay-ng --test wlan0
+   ```
+   If successful, `aireplay-ng` will show packet injection responses from nearby access points.
 
 ## Related
 

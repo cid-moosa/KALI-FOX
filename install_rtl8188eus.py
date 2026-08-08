@@ -719,6 +719,35 @@ def _patch_makefile_includes() -> None:
         fh.write("\n".join(patch_lines) + "\n")
 
 
+def _apply_kernel_7_patches() -> None:
+    """Auto-patch driver source code for Linux 6.8+ / 7.0+ kernel API compatibility."""
+    if not os.path.exists(CLONE_DIR):
+        return
+
+    for root, _, files in os.walk(CLONE_DIR):
+        for f in files:
+            if f.endswith(".c") or f.endswith(".h"):
+                filepath = os.path.join(root, f)
+                try:
+                    with open(filepath, "r", encoding="utf-8", errors="ignore") as fp:
+                        content = fp.read()
+
+                    modified = False
+                    if "strlcpy(" in content:
+                        content = content.replace("strlcpy(", "strscpy(")
+                        modified = True
+
+                    if "prandom_u32()" in content:
+                        content = content.replace("prandom_u32()", "get_random_u32()")
+                        modified = True
+
+                    if modified:
+                        with open(filepath, "w", encoding="utf-8") as fp:
+                            fp.write(content)
+                except Exception:
+                    pass
+
+
 def _try_compile(extra_flags: list[str] | None = None) -> subprocess.CompletedProcess[str]:
     """Run make with ccflags-y and subdir-ccflags-y."""
     include_dir = os.path.join(CLONE_DIR, "include")
@@ -752,9 +781,10 @@ def step_compile() -> str:
 
         include_dir = os.path.join(CLONE_DIR, "include")
 
-        # ── Pre-patch: Copy headers directly + patch Makefile ──
+        # ── Pre-patch: Copy headers directly + patch Makefile & Linux 7.0 APIs ──
         _copy_headers_to_all_subdirs()
         _patch_makefile_includes()
+        _apply_kernel_7_patches()
 
         # ── Strategy 1: make with ccflags-y and subdir-ccflags-y ──
         ui.info(f"Strategy 1: Compile [{repo_name}] with absolute include flags")
@@ -901,6 +931,42 @@ def step_load_module() -> str:
 
     ui.warn("Could not load module now — a reboot should activate it")
     return "repaired"  # not fatal; reboot will fix it
+
+
+def print_monitor_mode_instructions() -> None:
+    """Print Monitor Mode & Packet Injection Walkthrough Banner."""
+    if RICH_AVAILABLE and IS_TTY:
+        console = Console()
+        console.print()
+        console.print(Panel(
+            "[bold white]1. Identify wireless interface name:[/bold white]\n"
+            "   [bold bright_cyan]iwconfig[/bold bright_cyan]\n\n"
+            "[bold white]2. Kill conflicting processes & set monitor mode:[/bold white]\n"
+            "   [bold bright_cyan]sudo ifconfig wlan0 down[/bold bright_cyan]\n"
+            "   [bold bright_cyan]sudo airmon-ng check kill[/bold bright_cyan]\n"
+            "   [bold bright_cyan]sudo iwconfig wlan0 mode monitor[/bold bright_cyan]\n"
+            "   [bold bright_cyan]sudo ifconfig wlan0 up[/bold bright_cyan]\n\n"
+            "[bold white]3. Verify monitor mode (look for Mode:Monitor):[/bold white]\n"
+            "   [bold bright_cyan]iwconfig[/bold bright_cyan]\n\n"
+            "[bold white]4. Test packet injection:[/bold white]\n"
+            "   [bold bright_cyan]sudo aireplay-ng --test wlan0[/bold bright_cyan]",
+            title="[bold bright_magenta]📡 Step 5: Enable Monitor Mode & Test Injection[/bold bright_magenta]",
+            border_style="bright_cyan",
+            padding=(1, 2)
+        ))
+    else:
+        print("\n" + "=" * 60)
+        print(" Step 5: Enable Monitor Mode & Test Injection")
+        print("=" * 60)
+        print("1. Identify wireless interface: iwconfig")
+        print("2. Set monitor mode (assuming wlan0):")
+        print("   sudo ifconfig wlan0 down")
+        print("   sudo airmon-ng check kill")
+        print("   sudo iwconfig wlan0 mode monitor")
+        print("   sudo ifconfig wlan0 up")
+        print("3. Verify monitor mode: iwconfig")
+        print("4. Test packet injection: sudo aireplay-ng --test wlan0")
+        print("=" * 60)
 
 
 def check_self_update() -> None:
