@@ -763,7 +763,9 @@ def step_compile() -> str:
 
         if result.returncode == 0:
             ui.success(f"Compilation succeeded with {repo_name} (Strategy 1)")
-            return _do_make_install()
+            inst_res = _do_make_install()
+            if inst_res in ("success", "repaired"):
+                return inst_res
 
         # ── Strategy 2: make clean + retry with CFLAGS_MODULE ──
         ui.warn(f"Strategy 1 failed for {repo_name} — trying Strategy 2")
@@ -780,7 +782,9 @@ def step_compile() -> str:
 
         if result.returncode == 0:
             ui.repair(f"Compilation succeeded with {repo_name} (Strategy 2 — CFLAGS_MODULE)")
-            return _do_make_install("repaired")
+            inst_res = _do_make_install("repaired")
+            if inst_res in ("success", "repaired"):
+                return inst_res
 
         # ── Strategy 3: DKMS install ──
         ui.warn(f"Strategy 2 failed for {repo_name} — trying Strategy 3 (DKMS)")
@@ -827,11 +831,20 @@ def _do_make_install(status: str = "success") -> str:
                 if f.endswith(".ko") or f.endswith(".ko.xz") or f.endswith(".ko.zst") or ".ko." in f:
                     ko_files.append(os.path.join(root, f))
 
+    kernel = get_kernel_release()
+
+    # Fallback: check if module already exists in system module tree
+    if not ko_files:
+        existing = glob.glob(f"/lib/modules/{kernel}/**/8188eu.ko*", recursive=True) + glob.glob(f"/lib/modules/{kernel}/**/r8188eu.ko*", recursive=True)
+        if existing:
+            ui.repair(f"Module file already exists in kernel tree → {existing[0]}")
+            run_cmd(["depmod", "-a"])
+            return "repaired"
+
     if not ko_files:
         ui.error("No compiled .ko file found in driver source directory")
         return "failed"
 
-    kernel = get_kernel_release()
     dest_dir = f"/lib/modules/{kernel}/kernel/drivers/net/wireless/"
     os.makedirs(dest_dir, exist_ok=True)
 
@@ -972,8 +985,11 @@ def main() -> None:
             break
 
     # ── Screen 3: Completion & Summary Screen ──
+    any_failed = any("Failed" in s for _, s in results)
+    any_repaired = any("Repair" in s for _, s in results)
+
     time.sleep(1.0)
-    if RICH_AVAILABLE and IS_TTY:
+    if RICH_AVAILABLE and IS_TTY and not any_failed:
         Console().clear()
         Console().print(Rule("[bold bright_cyan]🏁 Phase 3: Final Installation Summary[/bold bright_cyan]", style="bright_magenta"))
         Console().print()
