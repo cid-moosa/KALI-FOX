@@ -801,7 +801,7 @@ def step_compile() -> str:
 
 
 def _do_make_install(status: str = "success") -> str:
-    """Run make install after successful compilation, with automatic direct file copy fallback."""
+    """Run make install, with automatic file copy fallback for any compiled .ko module."""
     with SpinnerContext("Running make install", spinner="arrow3"):
         result = run_cmd(["make", "install"], cwd=CLONE_DIR)
 
@@ -809,34 +809,48 @@ def _do_make_install(status: str = "success") -> str:
         ui.success("Driver installed into kernel modules tree")
         return status
 
-    ui.warn("make install failed — attempting auto-repair direct file copy")
+    ui.warn("make install failed — attempting auto-repair file copy")
     ui.repair_animation("Locating compiled kernel module file (.ko)")
 
-    # Find 8188eu.ko anywhere in CLONE_DIR recursively
+    # Find ANY .ko file compiled inside CLONE_DIR
     ko_files = []
     for root, _, files in os.walk(CLONE_DIR):
         for f in files:
-            if f.startswith("8188eu.ko"):
+            if f.endswith(".ko") or f.endswith(".ko.xz") or f.endswith(".ko.zst") or ".ko." in f:
                 ko_files.append(os.path.join(root, f))
 
     if not ko_files:
-        ui.error("No compiled 8188eu.ko file found in driver source directory")
+        ui.info("Running make modules explicitly to generate .ko file")
+        run_cmd(["make", "modules"], cwd=CLONE_DIR)
+        for root, _, files in os.walk(CLONE_DIR):
+            for f in files:
+                if f.endswith(".ko") or f.endswith(".ko.xz") or f.endswith(".ko.zst") or ".ko." in f:
+                    ko_files.append(os.path.join(root, f))
+
+    if not ko_files:
+        ui.error("No compiled .ko file found in driver source directory")
         return "failed"
 
-    src_ko = ko_files[0]
     kernel = get_kernel_release()
     dest_dir = f"/lib/modules/{kernel}/kernel/drivers/net/wireless/"
     os.makedirs(dest_dir, exist_ok=True)
-    dest_path = os.path.join(dest_dir, os.path.basename(src_ko))
 
-    try:
-        shutil.copy2(src_ko, dest_path)
+    installed = []
+    for src_ko in ko_files:
+        dest_path = os.path.join(dest_dir, os.path.basename(src_ko))
+        try:
+            shutil.copy2(src_ko, dest_path)
+            installed.append(dest_path)
+        except Exception as exc:
+            ui.warn(f"Could not copy {src_ko} to {dest_path}: {exc}")
+
+    if installed:
         run_cmd(["depmod", "-a"])
-        ui.repair(f"Copied module directly → {dest_path}")
+        ui.repair(f"Installed module file(s) → {dest_dir}")
         return "repaired"
-    except Exception as exc:
-        ui.error(f"Failed to copy module file to {dest_path}: {exc}")
-        return "failed"
+
+    ui.error("Failed to copy module files to kernel drivers directory")
+    return "failed"
 
 
 def step_load_module() -> str:
