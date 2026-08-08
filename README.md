@@ -1,6 +1,6 @@
 # 🦊 KALI-FOX
 
-> One-command RTL8188EUS driver installer & Monitor Mode setup for TP-Link TL-WN722N V2/V3 on Kali Linux.
+> One-command, self-healing RTL8188EUS driver installer & Monitor Mode setup for the TP-Link TL-WN722N V2/V3 Wi-Fi adapter on Kali Linux.
 
 ---
 
@@ -18,7 +18,7 @@ sudo python3 install_rtl8188eus.py
 
 ## 📡 Enable Monitor Mode & Run Wifite
 
-To stop background network interference, enable Monitor Mode on `wlan0`, and launch `wifite`:
+To stop background network interference, set `wlan0` to Monitor Mode, and run `wifite`:
 
 ```bash
 sudo python3 install_rtl8188eus.py --fix-monitor
@@ -28,10 +28,10 @@ sudo wifite -i wlan0 --kill
 ### Manual Commands (Optional)
 
 ```bash
-# 1. Kill interfering processes
+# 1. Stop interfering network services
 sudo airmon-ng check kill
 
-# 2. Set Monitor Mode
+# 2. Enable Monitor Mode on interface
 sudo ip link set wlan0 down
 sudo iw dev wlan0 set type monitor
 sudo ip link set wlan0 up
@@ -42,12 +42,24 @@ sudo aireplay-ng --test wlan0
 
 ---
 
-## 💡 Troubleshooting
+## 🧹 Auto-Cleaning Engine
 
-- **VMware / VirtualBox Users:** Ensure your TP-Link USB adapter is passed through to the Kali Linux VM in your VM USB settings (**USB 2.0 / 3.0**).
+Upon successful driver installation, KALI-FOX automatically cleans up temporary build files, cloned directories, and unnecessary installer caches to keep your system lean and compact.
 
 ---
 
-<p align="center">
-  Made with ❤️ by <a href="https://github.com/cid-moosa">cid-moosa</a>
-</p>
+## 📜 Credits & Author Rights
+
+This project utilizes driver source patches and DKMS module definitions maintained by the open-source community:
+
+- **aircrack-ng**: [rtl8188eus repository](https://github.com/aircrack-ng/rtl8188eus)
+- **gglluukk**: [rtl8188eus Linux 6.8+/7.0+ patches](https://github.com/gglluukk/rtl8188eus)
+- **lwfinger**: [rtl8188eu driver maintenance](https://github.com/lwfinger/rtl8188eu)
+
+*All original driver copyrights and license rights belong to their respective authors.*
+
+---
+
+## 📄 License
+
+[MIT License](LICENSE) — Created with ❤️ by [cid-moosa](https://github.com/cid-moosa)

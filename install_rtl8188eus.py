@@ -255,14 +255,15 @@ class RichPrinter:
             c = logo_colors[idx % len(logo_colors)]
             logo_text.append(f"{line}\n", style=f"bold {c}")
 
-        subtitle = Text("RTL8188EUS Driver Installer — Self-Healing DKMS Cyber Edition", style="bold bright_white")
+        subtitle = Text("RTL8188EUS Driver Installer — Self-Healing DKMS Edition", style="bold bright_white")
+        credits_notice = Text("Driver Rights & Credits: aircrack-ng · gglluukk · lwfinger | Created by cid-moosa", style="dim cyan")
         panel = Panel(
-            Align.center(logo_text + Text("\n") + Align.center(subtitle)),
+            Align.center(logo_text + Text("\n") + Align.center(subtitle) + Text("\n") + Align.center(credits_notice)),
             border_style="bold bright_magenta",
             box=box.DOUBLE,
             padding=(1, 2),
-            title="[bold black on bright_magenta] 🦊 KALI-FOX v6.0 [/bold black on bright_magenta]",
-            subtitle="[bold black on bright_cyan] Fully Automated · Auto-Repair · Zero Prompts [/bold black on bright_cyan]",
+            title="[bold black on bright_magenta] 🦊 KALI-FOX v7.1 [/bold black on bright_magenta]",
+            subtitle="[bold black on bright_cyan] Fully Automated · Self-Cleaning · Zero Prompts [/bold black on bright_cyan]",
         )
         self.console.print(panel)
 
@@ -1090,6 +1091,28 @@ def print_monitor_mode_instructions() -> None:
         print("=" * 60)
 
 
+def cleanup_post_installation() -> None:
+    """Auto-clean temporary clone directories and unwanted build files after successful driver installation."""
+    ui.info("Running post-installation self-cleaning...")
+    cleanup_paths = [
+        CLONE_DIR,
+        "/usr/src/rtl8188eus",
+        "/tmp/rtl8188eus",
+        "/tmp/8188eu",
+    ]
+    cleaned = 0
+    for p in cleanup_paths:
+        if os.path.exists(p):
+            try:
+                shutil.rmtree(p, ignore_errors=True)
+                cleaned += 1
+            except Exception:
+                pass
+
+    if cleaned > 0:
+        ui.success("Self-Cleaning complete — removed temporary build files & installer caches! 🧹")
+
+
 def check_self_update() -> None:
     """If running inside a git repository, automatically update to latest origin/master if behind."""
     if os.path.isdir(".git") and "--no-update" not in sys.argv:
@@ -1195,6 +1218,7 @@ def main() -> None:
         else:
             ui.success("Installation complete — clean run with zero errors! 🦊")
 
+        cleanup_post_installation()
         print_wifite_diagnostic_guide()
 
         # Auto-reboot countdown
