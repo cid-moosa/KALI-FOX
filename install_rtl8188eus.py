@@ -933,6 +933,80 @@ def step_load_module() -> str:
     return "repaired"  # not fatal; reboot will fix it
 
 
+def print_wifite_diagnostic_guide(iface: str = "wlan0") -> None:
+    """Print troubleshooting guide for wifite scanning & VM USB passthrough."""
+    if RICH_AVAILABLE and IS_TTY:
+        console = Console()
+        console.print()
+        console.print(Panel(
+            f"[bold bright_green]✦ How to run Wifite with RTL8188EUS:[/bold bright_green]\n\n"
+            f"[bold white]1. Always kill interfering processes first:[/bold white]\n"
+            f"   [bright_cyan]sudo airmon-ng check kill[/bright_cyan]\n\n"
+            f"[bold white]2. Run Wifite directly specifying your interface:[/bold white]\n"
+            f"   [bright_cyan]sudo wifite -i {iface}[/bright_cyan]  [dim]or[/dim]  [bright_cyan]sudo wifite --kill[/bright_cyan]\n\n"
+            f"[bold white]3. Test scanning with airodump-ng:[/bold white]\n"
+            f"   [bright_cyan]sudo airodump-ng {iface}[/bright_cyan]\n\n"
+            f"[bold yellow]⚠ IMPORTANT FOR VIRTUAL MACHINE USERS (VMware / VirtualBox):[/bold yellow]\n"
+            f"[dim]If wifite/airodump-ng is NOT listing nearby Wi-Fi networks:[/dim]\n"
+            f"  • Ensure your TP-Link TL-WN722N USB adapter is connected to the [bold white]Kali Linux VM[/bold white] (VM -> Removable Devices -> Realtek RTL8188EUS -> Connect), NOT Windows!\n"
+            f"  • Set VM USB Controller setting to [bold white]USB 2.0 or USB 3.0[/bold white].",
+            title="[bold bright_magenta]🔍 Wifite & Airodump Scanning Fix Guide[/bold bright_magenta]",
+            border_style="bright_cyan",
+            padding=(1, 2)
+        ))
+    else:
+        print("\n" + "=" * 60)
+        print(" Wifite & Airodump Scanning Fix Guide")
+        print("=" * 60)
+        print(f"1. Kill interfering processes: sudo airmon-ng check kill")
+        print(f"2. Run Wifite: sudo wifite -i {iface} --kill")
+        print(f"3. Test scanning: sudo airodump-ng {iface}")
+        print("4. VM Users: Pass through TP-Link USB to Kali VM in USB settings!")
+        print("=" * 60)
+
+
+def run_monitor_fix() -> None:
+    """Run automated Monitor Mode fixer and wifite diagnostic tool."""
+    ui.step_header("📡 Monitor Mode Auto-Fixer & Wifite Diagnostic")
+
+    with SpinnerContext("Killing processes interfering with monitor mode", spinner="dots"):
+        run_cmd(["airmon-ng", "check", "kill"])
+    ui.success("Interfering processes killed (NetworkManager, wpa_supplicant)")
+
+    # Detect wireless interfaces
+    ifaces = []
+    try:
+        r = run_cmd(["iwconfig"])
+        for line in (r.stdout or "").splitlines():
+            if line and not line.startswith(" ") and "no wireless" not in line:
+                iface_name = line.split()[0]
+                ifaces.append(iface_name)
+    except Exception:
+        pass
+
+    if not ifaces:
+        ifaces = ["wlan0"]
+
+    target_iface = ifaces[0]
+    ui.info(f"Targeting wireless interface: {target_iface}")
+
+    with SpinnerContext(f"Setting {target_iface} to Monitor Mode", spinner="bouncingBar"):
+        run_cmd(["ip", "link", "set", target_iface, "down"])
+        r1 = run_cmd(["iw", "dev", target_iface, "set", "type", "monitor"])
+        if r1.returncode != 0:
+            run_cmd(["iwconfig", target_iface, "mode", "monitor"])
+        run_cmd(["ip", "link", "set", target_iface, "up"])
+
+    # Verify
+    r_check = run_cmd(["iwconfig", target_iface])
+    if "Monitor" in (r_check.stdout or ""):
+        ui.success(f"Interface {target_iface} is now in Monitor Mode! 📡")
+    else:
+        ui.warn(f"Interface {target_iface} set — verify with iwconfig")
+
+    print_wifite_diagnostic_guide(target_iface)
+
+
 def print_monitor_mode_instructions() -> None:
     """Print Monitor Mode & Packet Injection Walkthrough Banner."""
     if RICH_AVAILABLE and IS_TTY:
@@ -994,6 +1068,11 @@ def main() -> None:
     # Graceful Ctrl+C
     signal.signal(signal.SIGINT, lambda *_: (ui.warn("\nInterrupted by user"), sys.exit(130)))
     atexit.register(cleanup_clone_dir)
+
+    if "--fix-monitor" in sys.argv or "-m" in sys.argv:
+        if check_root():
+            run_monitor_fix()
+        sys.exit(0)
 
     # ── Auto-Update Check ──
     check_self_update()
@@ -1062,15 +1141,14 @@ def main() -> None:
 
     ui.summary(results)
 
-    any_failed = any("Failed" in s for _, s in results)
-    any_repaired = any("Repair" in s for _, s in results)
-
     if not any_failed:
         ui.fox("happy")
         if any_repaired:
             ui.success("Installation complete — auto-repaired all build warnings! 🦊")
         else:
             ui.success("Installation complete — clean run with zero errors! 🦊")
+
+        print_wifite_diagnostic_guide()
 
         # Auto-reboot countdown
         if RICH_AVAILABLE and IS_TTY:
