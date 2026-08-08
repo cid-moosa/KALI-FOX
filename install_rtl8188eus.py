@@ -24,6 +24,7 @@ import textwrap
 
 # ── Rich dependency gate ──────────────────────────────────────────────────────
 try:
+    from rich import box
     from rich.console import Console
     from rich.panel import Panel
     from rich.text import Text
@@ -224,87 +225,88 @@ class PlainPrinter:
 
 
 class RichPrinter:
-    """Animated output powered by the rich library."""
+    """Ultra-vibrant, instant-rendering Cyber TUI powered by rich."""
 
     def __init__(self) -> None:
         self.console = Console()
 
     def info(self, msg: str) -> None:
-        self.console.print(f"  [cyan]ℹ[/cyan]  {msg}")
+        self.console.print(f"  [bold bright_cyan]⚡ INFO[/bold bright_cyan]  [white]{msg}[/white]")
 
     def success(self, msg: str) -> None:
-        self.console.print(f"  [bold green]✓[/bold green]  [green]{msg}[/green]")
+        self.console.print(f"  [bold black on bright_green] ✓ OK [/bold black on bright_green]  [bold bright_green]{msg}[/bold bright_green]")
 
     def warn(self, msg: str) -> None:
-        self.console.print(f"  [bold yellow]⚠[/bold yellow]  [yellow]{msg}[/yellow]")
+        self.console.print(f"  [bold black on bright_yellow] ⚠ WARN [/bold black on bright_yellow]  [bold bright_yellow]{msg}[/bold bright_yellow]")
 
     def error(self, msg: str) -> None:
-        self.console.print(f"  [bold red]✗[/bold red]  [red]{msg}[/red]")
+        self.console.print(f"  [bold white on red] ✗ FAIL [/bold white on red]  [bold bright_red]{msg}[/bold bright_red]")
 
     def repair(self, msg: str) -> None:
-        self.console.print(f"  [bold bright_magenta]🔧[/bold bright_magenta]  [bright_magenta]{msg}[/bright_magenta]")
+        self.console.print(f"  [bold white on bright_magenta] 🔧 REPAIR [/bold white on bright_magenta]  [bold bright_magenta]{msg}[/bold bright_magenta]")
 
     def header(self, _msg: str) -> None:
+        # Instant full screen clear and render without line-by-line sleep
         self.console.clear()
-        logo_lines = LOGO_ART.strip().splitlines()
-        for line in logo_lines:
-            self.console.print(f"[bold bright_magenta]{line}[/bold bright_magenta]")
-            time.sleep(0.08)
 
-        time.sleep(0.3)
+        logo_text = Text()
+        logo_colors = ["bright_magenta", "magenta1", "violet", "bright_cyan", "cyan1", "bright_green", "bright_yellow"]
+        for idx, line in enumerate(LOGO_ART.strip().splitlines()):
+            c = logo_colors[idx % len(logo_colors)]
+            logo_text.append(f"{line}\n", style=f"bold {c}")
 
-        subtitle = Text("RTL8188EUS Driver Installer — Self-Healing Edition", style="bold bright_white")
+        subtitle = Text("RTL8188EUS Driver Installer — Self-Healing DKMS Cyber Edition", style="bold bright_white")
         panel = Panel(
-            Align.center(subtitle),
-            border_style="bright_cyan",
+            Align.center(logo_text + Text("\n") + Align.center(subtitle)),
+            border_style="bold bright_magenta",
+            box=box.DOUBLE,
             padding=(1, 2),
-            title="[bold bright_magenta]🦊 KALI-FOX v3.0[/bold bright_magenta]",
-            subtitle="[dim italic]Fully Automated · Auto-Repair · Zero Prompts[/dim italic]",
+            title="[bold black on bright_magenta] 🦊 KALI-FOX v6.0 [/bold black on bright_magenta]",
+            subtitle="[bold black on bright_cyan] Fully Automated · Auto-Repair · Zero Prompts [/bold black on bright_cyan]",
         )
         self.console.print(panel)
-        self.console.print()
 
     def step_header(self, msg: str) -> None:
         self.console.print()
-        self.console.print(Rule(f"[bold bright_yellow]{msg}[/bold bright_yellow]", style="dim cyan"))
+        self.console.print(Rule(f"[bold black on bright_yellow] {msg} [/bold black on bright_yellow]", style="bold bright_cyan"))
 
     def phase(self, step: int, msg: str) -> None:
-        filled = "█" * step
-        empty = "░" * (TOTAL_STEPS - step)
+        filled = "█" * (step * 2)
+        empty = "░" * ((TOTAL_STEPS - step) * 2)
         pct = int((step / TOTAL_STEPS) * 100)
         self.console.print()
         self.console.print(
-            f"  [bright_cyan][[bold bright_magenta]{filled}[/bold bright_magenta]"
-            f"[dim]{empty}[/dim]][/bright_cyan]  "
-            f"[bold white]Phase {step}/{TOTAL_STEPS}[/bold white] "
-            f"[dim]({pct}%)[/dim]  —  [bright_yellow]{msg}[/bright_yellow]"
+            f"  [bold bright_cyan]━━━ [bold bright_magenta]Phase {step}/{TOTAL_STEPS}[/bold bright_magenta] [bold white]({pct}%)[/bold white] ━━━[/bold bright_cyan]\n"
+            f"  [bold bright_magenta][{filled}[/bold bright_magenta][dim]{empty}[/dim]]  "
+            f"[bold bright_yellow]{msg}[/bold bright_yellow]"
         )
 
     def summary(self, rows: list[tuple[str, str]]) -> None:
         table = Table(
-            title="[bold bright_cyan]⚡ Installation Summary ⚡[/bold bright_cyan]",
+            title="[bold black on bright_cyan] ⚡ INSTALLATION SUMMARY DASHBOARD ⚡ [/bold black on bright_cyan]",
             show_header=True,
-            header_style="bold bright_white",
-            border_style="bright_cyan",
+            header_style="bold bright_white on dark_blue",
+            border_style="bold bright_magenta",
+            box=box.HEAVY_EDGE,
             title_style="bold",
             padding=(0, 2),
             show_lines=True,
         )
-        table.add_column("Step", style="white", min_width=34)
-        table.add_column("Result", justify="center", min_width=18)
+        table.add_column("Installation Step", style="bold white", min_width=36)
+        table.add_column("Status Result", justify="center", min_width=22)
         for label, status in rows:
             if "success" in status.lower():
-                color = "bold green"
+                color = "bold black on bright_green"
                 icon = "✅"
             elif "repair" in status.lower():
-                color = "bold bright_magenta"
+                color = "bold white on bright_magenta"
                 icon = "🔧"
             else:
-                color = "bold red"
+                color = "bold white on red"
                 icon = "❌"
             table.add_row(
                 f"  {label}",
-                f"[{color}]{icon} {status}[/{color}]",
+                f"[{color}] {icon} {status} [/{color}]",
             )
         self.console.print()
         self.console.print(table)
@@ -322,32 +324,29 @@ class RichPrinter:
 
         for line in art.strip().splitlines():
             self.console.print(Text(f"  {line}", style=f"bold {color}"))
-            time.sleep(0.08)
         self.console.print()
 
     def disclaimer(self) -> None:
         disclaimer_text = (
             "[bold white]Installs drivers for TP-Link TL-WN722N V2/V3 (RTL8188EUS).[/bold white]\n"
-            "[dim]Requires Kali Linux with root privileges.[/dim]\n"
-            "[dim]This will blacklist r8188eu and compile a new kernel module.[/dim]\n\n"
-            "[bold bright_green]✦ All errors are auto-repaired — zero user input needed.[/bold bright_green]"
+            "[bold cyan]Requires Kali Linux with root privileges.[/bold cyan]\n"
+            "[bold yellow]Blacklists stock r8188eu & rtl8xxxu drivers to prevent conflicts.[/bold yellow]\n\n"
+            "[bold black on bright_green] ✦ All errors auto-repaired — zero user prompts required. [/bold black on bright_green]"
         )
         panel = Panel(
             disclaimer_text,
-            title="[bold bright_yellow]⚠ DISCLAIMER[/bold bright_yellow]",
-            border_style="bright_yellow",
+            title="[bold black on bright_yellow] ⚠ KALI-FOX SYSTEM DISCLAIMER [/bold black on bright_yellow]",
+            border_style="bold bright_yellow",
+            box=box.ROUNDED,
             padding=(1, 3),
         )
         self.console.print(panel)
         self.console.print()
 
     def typewriter(self, msg: str) -> None:
-        for ch in msg:
-            self.console.print(f"[bold bright_cyan]{ch}[/bold bright_cyan]", end="")
-            time.sleep(0.02)
-        self.console.print()
+        self.console.print(f"  [bold bright_cyan]{msg}[/bold bright_cyan]")
 
-    def globe_spin(self, message: str, duration: float = 2.0) -> None:
+    def globe_spin(self, message: str, duration: float = 1.0) -> None:
         frames = ["🌍", "🌎", "🌏"]
         cycle = itertools.cycle(frames)
         with Live(console=self.console, refresh_per_second=10, transient=True) as live:
@@ -355,19 +354,23 @@ class RichPrinter:
             while time.time() < end:
                 globe = next(cycle)
                 live.update(Text.from_markup(f"  {globe}  [bold cyan]{message}[/bold cyan]"))
-                time.sleep(0.15)
+                time.sleep(0.1)
 
     def model_banner(self) -> None:
         self.console.print()
         for line in MODEL_ART.strip().splitlines():
             self.console.print(f"[bold bright_cyan]{line}[/bold bright_cyan]")
-            time.sleep(0.06)
         self.console.print()
 
-    def repair_animation(self, message: str, duration: float = 1.5) -> None:
+    def repair_animation(self, message: str, duration: float = 1.0) -> None:
         icons = ["🔧", "🔩", "⚙️ ", "🛠️"]
         cycle = itertools.cycle(icons)
         with Live(console=self.console, refresh_per_second=10, transient=True) as live:
+            end = time.time() + duration
+            while time.time() < end:
+                icon = next(cycle)
+                live.update(Text.from_markup(f"  {icon}  [bold magenta]{message}[/bold magenta]"))
+                time.sleep(0.1)
             end = time.time() + duration
             while time.time() < end:
                 icon = next(cycle)
