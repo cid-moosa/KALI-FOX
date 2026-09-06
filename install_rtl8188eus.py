@@ -1372,6 +1372,43 @@ def cleanup_post_installation() -> None:
         ui.success("Self-Cleaning complete — removed temporary build files & installer caches! 🧹")
 
 
+def cleanup_installer_dir() -> None:
+    """Remove the KALI-FOX installer directory itself after completion.
+
+    When the script runs as root (sudo), git operations create root-owned files
+    inside .git/ that the regular user cannot delete. This function cleans up
+    the entire installer directory since it's no longer needed after install/health-check.
+    On Linux, deleting a running script's files is safe — the process continues from memory.
+    """
+    script_path = os.path.abspath(__file__)
+    script_dir = os.path.dirname(script_path)
+
+    # Safety: only delete if this looks like a KALI-FOX clone (has our script + .git)
+    if not os.path.isfile(os.path.join(script_dir, "install_rtl8188eus.py")):
+        return
+    if not os.path.isdir(os.path.join(script_dir, ".git")):
+        return
+    # Extra safety: don't delete if we're in / or /home or /root directly
+    if script_dir in ("/", "/home", "/root", os.path.expanduser("~")):
+        return
+
+    ui.wipe_transition("🧹 INSTALLER SELF-CLEANUP")
+    ui.info(f"Removing installer directory: {script_dir}")
+    ui.info("(The driver is installed system-wide — this folder is no longer needed)")
+
+    try:
+        shutil.rmtree(script_dir, ignore_errors=False)
+        ui.success(f"Cleaned up {script_dir} — folder removed! 🧹")
+    except Exception as exc:
+        # Fallback: try with subprocess as root (we're already root)
+        try:
+            subprocess.run(["rm", "-rf", script_dir], check=True)
+            ui.success(f"Cleaned up {script_dir} — folder removed! 🧹")
+        except Exception:
+            ui.warn(f"Could not fully remove {script_dir}: {exc}")
+            ui.info(f"You can remove it manually: sudo rm -rf {script_dir}")
+
+
 def check_self_update() -> None:
     """If running inside a git repository, automatically update to latest origin/master if behind."""
     if os.path.isdir(".git") and "--no-update" not in sys.argv:
@@ -1699,6 +1736,9 @@ def run_health_check() -> None:
     ui.summary([(name, "✓ Success" if passed else "✗ Failed") for name, passed in scan_results])
     print_monitor_mode_instructions()
 
+    # Self-cleanup: remove installer directory (root-owned files can't be deleted by user)
+    cleanup_installer_dir()
+
     sys.exit(0)
 
 
@@ -1812,6 +1852,7 @@ def main() -> None:
         ui.pulse_text("Your RTL8188EUS driver is now installed and ready! 🦊")
 
         cleanup_post_installation()
+        cleanup_installer_dir()
         print_wifite_diagnostic_guide()
 
         # Auto-reboot countdown with animated bar
