@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """
-KALI-FOX v3.0 — RTL8188EUS Driver Installer (Self-Healing Edition)
-Fully automated installer for the TP-Link TL-WN722N V2/V3 Wi-Fi adapter
-(Realtek RTL8188EUS chipset) on Kali Linux.
+KALI-FOX v8.0 — RTL8188EUS Driver Installer (Self-Healing Edition)
+Fully automated installer & health-checker for the TP-Link TL-WN722N V2/V3
+Wi-Fi adapter (Realtek RTL8188EUS chipset) on Kali Linux.
+
+Re-run on an existing installation to enter Health Check Mode —
+deep-scans every configuration and auto-heals any issues found.
 
 Every step auto-repairs on failure — zero user intervention required.
 
@@ -21,6 +24,7 @@ import time
 import itertools
 import glob
 import textwrap
+import random
 
 # ── Rich dependency gate & Bootstrap ──────────────────────────────────────────
 try:
@@ -237,6 +241,88 @@ class PlainPrinter:
             time.sleep(0.15)
         print()
 
+    @staticmethod
+    def matrix_rain(lines: int = 5) -> None:
+        """Brief matrix-style hex rain — plain text fallback."""
+        hex_chars = "0123456789ABCDEF"
+        width = min(shutil.get_terminal_size().columns, 80)
+        for _ in range(lines):
+            row = "".join(random.choice(hex_chars) for _ in range(width))
+            print(f"  {row}")
+            time.sleep(0.08)
+        # Clear the rain lines
+        for _ in range(lines):
+            sys.stdout.write("\033[A\033[K")
+        sys.stdout.flush()
+
+    @staticmethod
+    def scan_sweep(label: str, items: list[tuple[str, bool]]) -> None:
+        """Render each check item with a scanning cursor, then result."""
+        print(f"\n  ── {label} ──")
+        for name, passed in items:
+            tag = "✓ OK" if passed else "✗ FAIL"
+            print(f"  ▸ {name:.<50} [{tag}]")
+        print()
+
+    @staticmethod
+    def wipe_transition(label: str) -> None:
+        """Horizontal bar wipe that reveals a section title."""
+        width = min(shutil.get_terminal_size().columns - 4, 70)
+        for i in range(0, width, 4):
+            bar = "━" * i + "▸"
+            sys.stdout.write(f"\r  {bar}")
+            sys.stdout.flush()
+            time.sleep(0.01)
+        sys.stdout.write(f"\r  {'━' * width}\n")
+        print(f"  ◆ {label}")
+        print(f"  {'━' * width}")
+
+    @staticmethod
+    def pulse_text(msg: str) -> None:
+        """Text emphasis effect — plain text just prints bold-style."""
+        print(f"  ★ {msg}")
+
+    @staticmethod
+    def countdown_bar(seconds: int = 10) -> None:
+        """Visual countdown bar that drains from full to empty."""
+        width = 30
+        for i in range(seconds, 0, -1):
+            filled = int((i / seconds) * width)
+            bar = "█" * filled + "░" * (width - filled)
+            sys.stdout.write(f"\r  [{bar}]  {i}s remaining ")
+            sys.stdout.flush()
+            time.sleep(1)
+        sys.stdout.write(f"\r  {'░' * (width + 2)}  Rebooting now...     \n")
+        sys.stdout.flush()
+
+    @staticmethod
+    def success_burst(msg: str) -> None:
+        """Rapid symbol cascade converging to a centered message."""
+        symbols = ["✦", "✧", "★", "⚡", "✦", "✧"]
+        width = min(shutil.get_terminal_size().columns - 4, 70)
+        for sym in symbols:
+            line = f"  {sym * (width // 2)}"
+            sys.stdout.write(f"\r{line}")
+            sys.stdout.flush()
+            time.sleep(0.06)
+        sys.stdout.write("\r" + " " * (width + 4) + "\r")
+        centered = msg.center(width)
+        print(f"  ⚡ {centered} ⚡")
+        print()
+
+    @staticmethod
+    def dna_helix(msg: str, duration: float = 1.0) -> None:
+        """Brief double-helix unzip animation revealing a message."""
+        frames = [
+            "╔══╗", "║╔╗║", "║║║║", "╚║║╝",
+            " ║║ ", " ╚╝ ", "  ▼ ",
+        ]
+        for frame in frames:
+            sys.stdout.write(f"\r  {frame}  {msg}")
+            sys.stdout.flush()
+            time.sleep(duration / len(frames))
+        print()
+
 
 class RichPrinter:
     """Ultra-vibrant, instant-rendering Cyber TUI powered by rich."""
@@ -276,7 +362,7 @@ class RichPrinter:
             border_style="bold bright_magenta",
             box=box.DOUBLE,
             padding=(1, 2),
-            title="[bold black on bright_magenta] 🦊 KALI-FOX v7.1 [/bold black on bright_magenta]",
+            title="[bold black on bright_magenta] 🦊 KALI-FOX v8.0 [/bold black on bright_magenta]",
             subtitle="[bold black on bright_cyan] Fully Automated · Self-Cleaning · Zero Prompts [/bold black on bright_cyan]",
         )
         self.console.print(panel)
@@ -396,8 +482,167 @@ class RichPrinter:
                 )
                 time.sleep(0.15)
 
+    def matrix_rain(self, lines: int = 5) -> None:
+        """Brief matrix-style hex rain — rich version with color."""
+        hex_chars = "0123456789ABCDEF"
+        rain_colors = ["bright_green", "green", "bright_cyan", "cyan", "bright_magenta"]
+        width = min(self.console.width, 80)
+        with Live(console=self.console, refresh_per_second=20, transient=True) as live:
+            grid = []
+            for row_idx in range(lines):
+                row = "".join(random.choice(hex_chars) for _ in range(width))
+                grid.append(row)
+            for frame in range(12):
+                display = Text()
+                for row_idx, row in enumerate(grid):
+                    color = rain_colors[(row_idx + frame) % len(rain_colors)]
+                    shift = random.randint(1, 4)
+                    mutated = row[shift:] + "".join(random.choice(hex_chars) for _ in range(shift))
+                    grid[row_idx] = mutated
+                    display.append(f"  {mutated}\n", style=f"bold {color}")
+                live.update(display)
+                time.sleep(0.06)
 
-# Choose printer based on environment
+    def scan_sweep(self, label: str, items: list[tuple[str, bool]]) -> None:
+        """Render each check item one-by-one with animated scanning cursor."""
+        self.console.print()
+        self.console.print(Rule(f"[bold bright_cyan] {label} [/bold bright_cyan]", style="bright_magenta"))
+        self.console.print()
+        for name, passed in items:
+            # Show scanning state briefly
+            with Live(console=self.console, refresh_per_second=15, transient=True) as live:
+                scan_chars = ["▸", "▹", "▸", "▹"]
+                for sc in scan_chars:
+                    live.update(Text.from_markup(
+                        f"  [bright_yellow]{sc}[/bright_yellow]  [dim]{name:.<52}[/dim]  [bright_yellow]scanning[/bright_yellow]"
+                    ))
+                    time.sleep(0.08)
+            # Show result
+            if passed:
+                self.console.print(
+                    f"  [bold bright_green]✓[/bold bright_green]  [white]{name:.<52}[/white]  "
+                    f"[bold black on bright_green] PASS [/bold black on bright_green]"
+                )
+            else:
+                self.console.print(
+                    f"  [bold bright_red]✗[/bold bright_red]  [white]{name:.<52}[/white]  "
+                    f"[bold white on red] FAIL [/bold white on red]"
+                )
+        self.console.print()
+
+    def wipe_transition(self, label: str) -> None:
+        """Horizontal bar wipe that reveals a section title with color gradient."""
+        width = min(self.console.width - 6, 70)
+        wipe_colors = ["bright_magenta", "magenta1", "bright_cyan", "cyan1", "bright_green"]
+        with Live(console=self.console, refresh_per_second=30, transient=True) as live:
+            for i in range(0, width, 2):
+                bar_text = Text()
+                bar_text.append("  ")
+                for j in range(i + 1):
+                    c = wipe_colors[j % len(wipe_colors)]
+                    bar_text.append("━", style=f"bold {c}")
+                bar_text.append("▸", style="bold bright_white")
+                live.update(bar_text)
+                time.sleep(0.008)
+        # Final reveal
+        bar_text = Text()
+        bar_text.append("  ")
+        for j in range(width):
+            c = wipe_colors[j % len(wipe_colors)]
+            bar_text.append("━", style=f"bold {c}")
+        self.console.print(bar_text)
+        self.console.print(f"  [bold bright_white]◆[/bold bright_white] [bold bright_cyan]{label}[/bold bright_cyan]")
+        bar_text2 = Text()
+        bar_text2.append("  ")
+        for j in range(width):
+            c = wipe_colors[j % len(wipe_colors)]
+            bar_text2.append("━", style=f"bold {c}")
+        self.console.print(bar_text2)
+
+    def pulse_text(self, msg: str) -> None:
+        """Text renders dim → bright → normal in 3 quick frames."""
+        styles = [
+            ("dim bright_cyan", "dim"),
+            ("bold bright_white", "bold"),
+            ("bold bright_green", "bold"),
+        ]
+        with Live(console=self.console, refresh_per_second=10, transient=True) as live:
+            for text_style, icon_style in styles:
+                live.update(Text.from_markup(
+                    f"  [{icon_style}]★[/{icon_style}]  [{text_style}]{msg}[/{text_style}]"
+                ))
+                time.sleep(0.15)
+        self.console.print(f"  [bold bright_green]★[/bold bright_green]  [bold bright_green]{msg}[/bold bright_green]")
+
+    def countdown_bar(self, seconds: int = 10) -> None:
+        """Visual countdown bar with color gradient that drains."""
+        width = 30
+        with Live(console=self.console, refresh_per_second=4, transient=False) as live:
+            for i in range(seconds, 0, -1):
+                filled = int((i / seconds) * width)
+                pct = i / seconds
+                if pct > 0.6:
+                    bar_color = "bright_green"
+                elif pct > 0.3:
+                    bar_color = "bright_yellow"
+                else:
+                    bar_color = "bright_red"
+                bar = Text()
+                bar.append("  [", style="bold white")
+                bar.append("█" * filled, style=f"bold {bar_color}")
+                bar.append("░" * (width - filled), style="dim")
+                bar.append("]  ", style="bold white")
+                bar.append(f"{i}s", style=f"bold {bar_color}")
+                bar.append(" remaining", style="dim")
+                live.update(bar)
+                time.sleep(1)
+            final = Text()
+            final.append("  [", style="bold white")
+            final.append("░" * width, style="dim")
+            final.append("]  ", style="bold white")
+            final.append("Rebooting now...", style="bold bright_magenta")
+            live.update(final)
+
+    def success_burst(self, msg: str) -> None:
+        """Rapid symbol cascade converging to a centered success message."""
+        symbols = ["✦", "✧", "★", "⚡", "✦", "✧"]
+        burst_colors = ["bright_magenta", "bright_cyan", "bright_yellow", "bright_green", "bright_white", "bright_magenta"]
+        width = min(self.console.width - 4, 70)
+        with Live(console=self.console, refresh_per_second=20, transient=True) as live:
+            for idx, sym in enumerate(symbols):
+                burst = Text()
+                burst.append("  ")
+                color = burst_colors[idx % len(burst_colors)]
+                burst.append(sym * (width // 2), style=f"bold {color}")
+                live.update(burst)
+                time.sleep(0.07)
+        # Final centered message
+        self.console.print()
+        self.console.print(Align.center(
+            Text.from_markup(f"[bold bright_green]⚡ {msg} ⚡[/bold bright_green]")
+        ))
+        self.console.print()
+
+    def dna_helix(self, msg: str, duration: float = 1.0) -> None:
+        """Brief double-helix unzip animation revealing a message."""
+        helix_frames = [
+            ("╔══╗", "bright_magenta"),
+            ("║╔╗║", "magenta1"),
+            ("║║║║", "bright_cyan"),
+            ("╚║║╝", "cyan1"),
+            (" ║║ ", "bright_yellow"),
+            (" ╚╝ ", "bright_green"),
+            ("  ▼ ", "bright_white"),
+        ]
+        with Live(console=self.console, refresh_per_second=15, transient=True) as live:
+            for frame, color in helix_frames:
+                live.update(Text.from_markup(
+                    f"  [bold {color}]{frame}[/bold {color}]  [bold bright_magenta]{msg}[/bold bright_magenta]"
+                ))
+                time.sleep(duration / len(helix_frames))
+        self.console.print(f"  [bold bright_magenta]  ▼  {msg}[/bold bright_magenta]")
+
+
 ui: "PlainPrinter | RichPrinter"
 if RICH_AVAILABLE and IS_TTY:
     ui = RichPrinter()
@@ -493,7 +738,7 @@ def step_install_dependencies() -> str:
 
     if result.returncode != 0:
         ui.warn("apt-get update failed — attempting auto-repair")
-        ui.repair_animation("Fixing package manager")
+        ui.dna_helix("Fixing package manager")
 
         # Repair: fix broken sources
         with SpinnerContext("Running dpkg --configure -a", spinner="toggle"):
@@ -516,7 +761,7 @@ def step_install_dependencies() -> str:
     if result.returncode != 0:
         ui.warn("Package installation failed — attempting auto-repair")
         ui.fox("repair")
-        ui.repair_animation("Repairing broken packages")
+        ui.dna_helix("Repairing broken packages")
 
         # Repair strategy 1: fix broken installs
         with SpinnerContext("Running apt-get install -f", spinner="toggle"):
@@ -641,7 +886,7 @@ def step_clone(repo_url: str | None = None) -> str:
 
     # ── Repair 1: retry clone without depth limit ──
     ui.warn("Git clone failed — retrying without depth limit")
-    ui.repair_animation("Retrying git clone")
+    ui.dna_helix("Retrying git clone")
     if os.path.isdir(CLONE_DIR):
         shutil.rmtree(CLONE_DIR, ignore_errors=True)
 
@@ -655,7 +900,7 @@ def step_clone(repo_url: str | None = None) -> str:
     # ── Repair 2: tarball fallback ──
     ui.warn("Git clone failed — falling back to tarball download")
     ui.fox("repair")
-    ui.repair_animation("Downloading tarball archive")
+    ui.dna_helix("Downloading tarball archive")
 
     tarball = "/tmp/rtl8188eus.tar.gz"
     tarball_url = target_repo.replace(".git", "/archive/refs/heads/master.tar.gz").replace("github.com", "codeload.github.com")
@@ -842,7 +1087,7 @@ def step_compile() -> str:
 
         # ── Strategy 2: make clean + retry with CFLAGS_MODULE ──
         ui.warn(f"Strategy 1 failed for {repo_name} — trying Strategy 2")
-        ui.repair_animation("Cleaning build and retrying with CFLAGS_MODULE")
+        ui.dna_helix("Cleaning build and retrying with CFLAGS_MODULE")
 
         with SpinnerContext("Running make clean", spinner="toggle"):
             run_cmd(["make", "clean"], cwd=CLONE_DIR)
@@ -861,7 +1106,7 @@ def step_compile() -> str:
 
         # ── Strategy 3: DKMS install ──
         ui.warn(f"Strategy 2 failed for {repo_name} — trying Strategy 3 (DKMS)")
-        ui.repair_animation("Attempting DKMS installation")
+        ui.dna_helix("Attempting DKMS installation")
 
         with SpinnerContext("Running make clean", spinner="toggle"):
             run_cmd(["make", "clean"], cwd=CLONE_DIR)
@@ -887,7 +1132,7 @@ def _do_make_install(status: str = "success") -> str:
         return status
 
     ui.warn("make install failed — attempting auto-repair file copy")
-    ui.repair_animation("Locating compiled kernel module file (.ko)")
+    ui.dna_helix("Locating compiled kernel module file (.ko)")
 
     # Find ANY .ko file compiled inside CLONE_DIR
     ko_files = []
@@ -956,7 +1201,7 @@ def step_load_module() -> str:
 
     # ── Repair: try insmod directly ──
     ui.warn("modprobe failed — trying insmod directly")
-    ui.repair_animation("Searching for compiled module file")
+    ui.dna_helix("Searching for compiled module file")
 
     # Find the .ko file
     ko_candidates = (
@@ -1137,13 +1382,324 @@ def check_self_update() -> None:
                 behind_count = int(log_check.stdout.strip() or "0")
                 if behind_count > 0:
                     ui.info(f"Self-Update: New version detected ({behind_count} commit(s) behind origin/master).")
-                    ui.repair_animation("Syncing latest code from GitHub")
+                    ui.dna_helix("Syncing latest code from GitHub")
                     subprocess.run(["git", "reset", "--hard", "origin/master"], capture_output=True, text=True)
                     ui.success("Self-Update successful! Restarting script...")
                     time.sleep(1)
                     os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception:
             pass
+
+# ── Health Check / Verification Mode ─────────────────────────────────────────
+
+def is_driver_installed() -> bool:
+    """Detect if the RTL8188EUS driver is already installed on this system."""
+    kernel = get_kernel_release()
+
+    # Check 1: Module file exists in kernel tree
+    ko_paths = (
+        glob.glob(f"/lib/modules/{kernel}/**/8188eu.ko*", recursive=True)
+        + glob.glob(f"/lib/modules/{kernel}/**/r8188eu.ko*", recursive=True)
+    )
+    if ko_paths:
+        return True
+
+    # Check 2: Module is currently loaded
+    lsmod = run_cmd(["lsmod"])
+    if "8188eu" in (lsmod.stdout or ""):
+        return True
+
+    # Check 3: DKMS shows installed
+    dkms_status = run_cmd(["dkms", "status"])
+    if "rtl8188eus" in (dkms_status.stdout or "") and "installed" in (dkms_status.stdout or "").lower():
+        return True
+
+    return False
+
+
+def _hc_check_kernel_headers() -> tuple[str, bool, str]:
+    """Check if kernel headers are installed."""
+    kernel = get_kernel_release()
+    header_dir = f"/usr/src/linux-headers-{kernel}"
+    passed = os.path.isdir(header_dir)
+    return ("Kernel headers installed", passed, f"linux-headers-{kernel}")
+
+
+def _hc_check_blacklist() -> tuple[str, bool, str]:
+    """Check blacklist configuration."""
+    if not os.path.isfile(BLACKLIST_FILE):
+        return ("Blacklist configuration", False, BLACKLIST_FILE)
+    try:
+        with open(BLACKLIST_FILE, "r") as fh:
+            content = fh.read()
+        has_r8188eu = "blacklist r8188eu" in content
+        has_rtl8xxxu = "blacklist rtl8xxxu" in content
+        return ("Blacklist configuration", has_r8188eu and has_rtl8xxxu, BLACKLIST_FILE)
+    except OSError:
+        return ("Blacklist configuration", False, BLACKLIST_FILE)
+
+
+def _hc_check_module_file() -> tuple[str, bool, str]:
+    """Check if .ko module file exists."""
+    kernel = get_kernel_release()
+    ko_paths = (
+        glob.glob(f"/lib/modules/{kernel}/**/8188eu.ko*", recursive=True)
+        + glob.glob(f"/lib/modules/{kernel}/**/r8188eu.ko*", recursive=True)
+    )
+    if ko_paths:
+        return ("Driver module file (.ko)", True, ko_paths[0])
+    return ("Driver module file (.ko)", False, f"/lib/modules/{kernel}/")
+
+
+def _hc_check_module_loaded() -> tuple[str, bool, str]:
+    """Check if 8188eu module is currently loaded."""
+    lsmod = run_cmd(["lsmod"])
+    loaded = "8188eu" in (lsmod.stdout or "")
+    return ("Driver module loaded in kernel", loaded, "8188eu")
+
+
+def _hc_check_conflicting_modules() -> tuple[str, bool, str]:
+    """Check that conflicting modules are NOT loaded."""
+    lsmod = run_cmd(["lsmod"])
+    stdout = lsmod.stdout or ""
+    r8188_loaded = "r8188eu" in stdout and "8188eu " not in stdout.replace("r8188eu", "")
+    # More precise: check if r8188eu or rtl8xxxu appear as module names
+    conflict = False
+    for line in stdout.splitlines():
+        parts = line.split()
+        if parts and parts[0] in ("r8188eu", "rtl8xxxu"):
+            conflict = True
+            break
+    return ("No conflicting modules loaded", not conflict, "r8188eu / rtl8xxxu")
+
+
+def _hc_check_dkms() -> tuple[str, bool, str]:
+    """Check DKMS status."""
+    if not shutil.which("dkms"):
+        return ("DKMS registration", False, "dkms not installed")
+    result = run_cmd(["dkms", "status"])
+    stdout = result.stdout or ""
+    if "rtl8188eus" in stdout or "8188eu" in stdout:
+        if "installed" in stdout.lower():
+            return ("DKMS registration", True, "installed")
+        return ("DKMS registration", False, "registered but not installed")
+    return ("DKMS registration", False, "not registered")
+
+
+def _hc_check_depmod() -> tuple[str, bool, str]:
+    """Check if depmod runs cleanly."""
+    result = run_cmd(["depmod", "-a"])
+    return ("Module dependency index (depmod)", result.returncode == 0, "depmod -a")
+
+
+def _hc_check_interface() -> tuple[str, bool, str]:
+    """Check if a wireless interface exists."""
+    if os.path.exists("/sys/class/net"):
+        for entry in os.listdir("/sys/class/net"):
+            if os.path.exists(f"/sys/class/net/{entry}/wireless") or entry.startswith("wlan"):
+                return ("Wireless interface detected", True, entry)
+    return ("Wireless interface detected", False, "/sys/class/net/wlan*")
+
+
+def _hc_check_build_tools() -> tuple[str, bool, str]:
+    """Check if essential build tools are installed."""
+    tools = ["gcc", "make", "git"]
+    missing = [t for t in tools if not shutil.which(t)]
+    if missing:
+        return ("Build tools (gcc, make, git)", False, f"missing: {', '.join(missing)}")
+    return ("Build tools (gcc, make, git)", True, "all present")
+
+
+def _hc_check_network_tools() -> tuple[str, bool, str]:
+    """Check if network/pentesting tools are available."""
+    tools = ["aircrack-ng", "iw"]
+    missing = [t for t in tools if not shutil.which(t)]
+    if missing:
+        return ("Network tools (aircrack-ng, iw)", False, f"missing: {', '.join(missing)}")
+    return ("Network tools (aircrack-ng, iw)", True, "all present")
+
+
+def _heal_issue(check_name: str, detail: str) -> bool:
+    """Attempt to auto-heal a failed health check. Returns True if healed."""
+    ui.dna_helix(f"Auto-healing: {check_name}")
+
+    if "Kernel headers" in check_name:
+        kernel = get_kernel_release()
+        with SpinnerContext(f"Installing linux-headers-{kernel}", spinner="dots"):
+            r = run_cmd(["apt-get", "install", "-y", "-qq", f"linux-headers-{kernel}"])
+        return r.returncode == 0
+
+    if "Blacklist" in check_name:
+        try:
+            os.makedirs(os.path.dirname(BLACKLIST_FILE), exist_ok=True)
+            with open(BLACKLIST_FILE, "w") as fh:
+                fh.write("blacklist r8188eu\nblacklist rtl8xxxu\n")
+            ui.success(f"Rewrote {BLACKLIST_FILE}")
+            return True
+        except OSError:
+            return False
+
+    if "module file" in check_name.lower():
+        ui.info("Module file missing — triggering full reinstall...")
+        clone_res = step_clone()
+        if clone_res == "failed":
+            return False
+        compile_res = step_compile()
+        return compile_res != "failed"
+
+    if "module loaded" in check_name.lower():
+        with SpinnerContext("Loading 8188eu module", spinner="dots"):
+            r = run_cmd(["modprobe", "8188eu"])
+        if r.returncode != 0:
+            # Try depmod first then modprobe
+            run_cmd(["depmod", "-a"])
+            r = run_cmd(["modprobe", "8188eu"])
+        return r.returncode == 0
+
+    if "conflicting" in check_name.lower():
+        for mod in ["r8188eu", "rtl8xxxu"]:
+            run_cmd(["rmmod", mod])
+        return True
+
+    if "DKMS" in check_name:
+        with SpinnerContext("Re-registering with DKMS", spinner="dots"):
+            run_cmd(["dkms", "autoinstall"])
+        return True
+
+    if "depmod" in check_name.lower():
+        r = run_cmd(["depmod", "-a"])
+        return r.returncode == 0
+
+    if "interface" in check_name.lower():
+        with SpinnerContext("Reloading driver module", spinner="dots"):
+            run_cmd(["rmmod", "8188eu"])
+            time.sleep(0.5)
+            run_cmd(["modprobe", "8188eu"])
+        time.sleep(1)
+        return True
+
+    if "Build tools" in check_name:
+        with SpinnerContext("Installing build-essential and git", spinner="dots"):
+            r = run_cmd(["apt-get", "install", "-y", "-qq", "build-essential", "git"])
+        return r.returncode == 0
+
+    if "Network tools" in check_name:
+        with SpinnerContext("Installing aircrack-ng and iw", spinner="dots"):
+            r = run_cmd(["apt-get", "install", "-y", "-qq", "aircrack-ng", "iw"])
+        return r.returncode == 0
+
+    return False
+
+
+def run_health_check() -> None:
+    """Deep-scan the entire RTL8188EUS driver installation and auto-heal any issues."""
+
+    if RICH_AVAILABLE and IS_TTY:
+        Console().clear()
+    ui.header("KALI-FOX")
+
+    # Health check mode banner
+    if RICH_AVAILABLE and IS_TTY:
+        console = Console()
+        console.print()
+        console.print(Panel(
+            "[bold bright_green]Driver already detected on this system![/bold bright_green]\n\n"
+            "[bold white]Entering [bold bright_cyan]🔍 Health Check Mode[/bold bright_cyan] — "
+            "deep-scanning every configuration,[/bold white]\n"
+            "[bold white]verifying all settings, and auto-healing any issues found.[/bold white]\n\n"
+            "[bold black on bright_green] ✦ Sit back — the fox will fix everything automatically. [/bold black on bright_green]",
+            title="[bold black on bright_cyan] 🔍 HEALTH CHECK MODE [/bold black on bright_cyan]",
+            border_style="bold bright_cyan",
+            box=box.DOUBLE,
+            padding=(1, 2),
+        ))
+    else:
+        print("\n" + "=" * 60)
+        print("  🔍 HEALTH CHECK MODE")
+        print("  Driver already detected — scanning configuration...")
+        print("=" * 60)
+
+    ui.wipe_transition("DEEP CONFIGURATION SCAN")
+    time.sleep(0.5)
+
+    # Run all checks
+    checks = [
+        _hc_check_kernel_headers,
+        _hc_check_blacklist,
+        _hc_check_module_file,
+        _hc_check_module_loaded,
+        _hc_check_conflicting_modules,
+        _hc_check_dkms,
+        _hc_check_depmod,
+        _hc_check_interface,
+        _hc_check_build_tools,
+        _hc_check_network_tools,
+    ]
+
+    scan_results: list[tuple[str, bool]] = []
+    failed_checks: list[tuple[str, str]] = []
+
+    for check_fn in checks:
+        name, passed, detail = check_fn()
+        scan_results.append((name, passed))
+        if not passed:
+            failed_checks.append((name, detail))
+
+    # Show scan results with animated sweep
+    ui.scan_sweep("🔍 Configuration Scan Results", scan_results)
+
+    # Auto-heal any failures
+    if failed_checks:
+        ui.wipe_transition("⚡ AUTO-HEAL ENGINE")
+        ui.info(f"Found {len(failed_checks)} issue(s) — engaging auto-heal...")
+        time.sleep(0.5)
+
+        healed = 0
+        heal_results: list[tuple[str, str]] = []
+        for name, detail in failed_checks:
+            success = _heal_issue(name, detail)
+            if success:
+                healed += 1
+                ui.success(f"Healed: {name}")
+                heal_results.append((name, "🔧 Healed"))
+            else:
+                ui.warn(f"Could not heal: {name} ({detail})")
+                heal_results.append((name, "✗ Failed"))
+            time.sleep(0.3)
+
+        # Re-scan after healing
+        ui.wipe_transition("🔄 VERIFICATION RE-SCAN")
+        time.sleep(0.5)
+
+        rescan_results: list[tuple[str, bool]] = []
+        for check_fn in checks:
+            name, passed, _ = check_fn()
+            rescan_results.append((name, passed))
+
+        ui.scan_sweep("🔄 Post-Heal Verification", rescan_results)
+
+        still_failed = sum(1 for _, p in rescan_results if not p)
+
+        if still_failed == 0:
+            ui.success_burst("ALL ISSUES HEALED — SYSTEM HEALTHY!")
+            ui.fox("happy")
+            ui.pulse_text("Your RTL8188EUS driver installation is now fully verified and healthy!")
+        else:
+            ui.fox("sad")
+            ui.warn(f"{still_failed} issue(s) could not be auto-healed.")
+            ui.info("You may need to reboot or report an issue at:")
+            ui.info("  https://github.com/cid-moosa/KALI-FOX/issues")
+    else:
+        # Everything passed!
+        ui.success_burst("ALL CHECKS PASSED — SYSTEM HEALTHY!")
+        ui.fox("happy")
+        ui.pulse_text("Your RTL8188EUS driver installation is perfect — nothing to fix!")
+
+    # Show summary table
+    ui.summary([(name, "✓ Success" if passed else "✗ Failed") for name, passed in scan_results])
+    print_monitor_mode_instructions()
+
+    sys.exit(0)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -1161,10 +1717,14 @@ def main() -> None:
     # ── Auto-Update Check ──
     check_self_update()
 
-    # ── Screen 1: Welcome & Specs Screen ──
+    # ── Matrix Rain Intro ──
     if RICH_AVAILABLE and IS_TTY:
         Console().clear()
+    ui.matrix_rain(lines=5)
+
+    # ── Screen 1: Welcome & Specs Screen ──
     ui.header("KALI-FOX")
+    ui.wipe_transition("SYSTEM INITIALIZING")
     ui.model_banner()
     ui.disclaimer()
 
@@ -1182,12 +1742,23 @@ def main() -> None:
     if not check_root():
         sys.exit(1)
 
-    ui.success("Running as root — full access granted")
-    time.sleep(1.5)
+    ui.pulse_text("Running as root — full access granted ⚡")
+    time.sleep(1.0)
+
+    # ── Health Check Detection ──
+    # If driver is already installed, enter verification mode instead of reinstalling
+    if is_driver_installed() and "--force-install" not in sys.argv:
+        ui.wipe_transition("DRIVER DETECTED — ENTERING HEALTH CHECK")
+        time.sleep(0.5)
+        run_health_check()
+        return  # run_health_check calls sys.exit
 
     # ── Screen 2: Installation Wizard Dashboard ──
     if RICH_AVAILABLE and IS_TTY:
         Console().clear()
+    ui.wipe_transition("🦊 DRIVER INSTALLATION WIZARD")
+
+    if RICH_AVAILABLE and IS_TTY:
         Console().print(Rule("[bold bright_cyan]🦊 Phase 2: Driver Installation Wizard[/bold bright_cyan]", style="bright_magenta"))
         Console().print()
 
@@ -1201,13 +1772,16 @@ def main() -> None:
         ("Load new kernel module", step_load_module),
     ]
 
-    for label, step_fn in steps:
+    for idx, (label, step_fn) in enumerate(steps):
+        ui.wipe_transition(f"PHASE {idx + 1}/{len(steps)}: {label.upper()}")
         status = step_fn()
 
         if status == "success":
             results.append((label, "✓ Success"))
+            ui.pulse_text(f"{label} — completed successfully")
         elif status == "repaired":
             results.append((label, "🔧 Repaired"))
+            ui.pulse_text(f"{label} — auto-repaired and verified")
         else:
             results.append((label, "✗ Failed"))
             ui.error(f"Step '{label}' failed even after auto-repair — aborting.")
@@ -1217,51 +1791,46 @@ def main() -> None:
     any_failed = any("Failed" in s for _, s in results)
     any_repaired = any("Repair" in s for _, s in results)
 
-    time.sleep(1.0)
+    time.sleep(0.5)
     if RICH_AVAILABLE and IS_TTY and not any_failed:
         Console().clear()
+    ui.wipe_transition("🏁 FINAL INSTALLATION SUMMARY")
+
+    if RICH_AVAILABLE and IS_TTY and not any_failed:
         Console().print(Rule("[bold bright_cyan]🏁 Phase 3: Final Installation Summary[/bold bright_cyan]", style="bright_magenta"))
         Console().print()
 
     ui.summary(results)
 
     if not any_failed:
-        ui.fox("happy")
         if any_repaired:
-            ui.success("Installation complete — auto-repaired all build warnings! 🦊")
+            ui.success_burst("INSTALLATION COMPLETE — AUTO-REPAIRED!")
         else:
-            ui.success("Installation complete — clean run with zero errors! 🦊")
+            ui.success_burst("INSTALLATION COMPLETE — ZERO ERRORS!")
+
+        ui.fox("happy")
+        ui.pulse_text("Your RTL8188EUS driver is now installed and ready! 🦊")
 
         cleanup_post_installation()
         print_wifite_diagnostic_guide()
 
-        # Auto-reboot countdown
+        # Auto-reboot countdown with animated bar
+        ui.wipe_transition("⚡ REBOOT COUNTDOWN")
         if RICH_AVAILABLE and IS_TTY:
             console = Console()
             console.print()
             console.print("  [bold bright_yellow]⚡ A reboot is recommended to load the new driver.[/bold bright_yellow]")
             console.print("  [dim]The system will reboot in 10 seconds. Press Ctrl+C to cancel.[/dim]")
             console.print()
-            try:
-                for i in range(10, 0, -1):
-                    console.print(f"\r  [bold bright_magenta]Rebooting in {i}s...[/bold bright_magenta]  ", end="")
-                    time.sleep(1)
-                console.print()
-                subprocess.run(["reboot"])
-            except KeyboardInterrupt:
-                console.print()
-                ui.info("Reboot cancelled — you can reboot manually later.")
         else:
-            print("\n  A reboot is recommended. Rebooting in 10 seconds (Ctrl+C to cancel)...")
-            try:
-                for i in range(10, 0, -1):
-                    print(f"\r  Rebooting in {i}s...", end="")
-                    time.sleep(1)
-                print()
-                subprocess.run(["reboot"])
-            except KeyboardInterrupt:
-                print()
-                ui.info("Reboot cancelled.")
+            print("\n  ⚡ A reboot is recommended. Press Ctrl+C to cancel.")
+            print()
+
+        try:
+            ui.countdown_bar(10)
+            subprocess.run(["reboot"])
+        except KeyboardInterrupt:
+            ui.info("Reboot cancelled — you can reboot manually later.")
     else:
         ui.fox("sad")
         ui.warn("Installation could not be completed even after auto-repair.")
