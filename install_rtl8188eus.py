@@ -22,7 +22,7 @@ import itertools
 import glob
 import textwrap
 
-# ── Rich dependency gate ──────────────────────────────────────────────────────
+# ── Rich dependency gate & Bootstrap ──────────────────────────────────────────
 try:
     from rich import box
     from rich.console import Console
@@ -44,6 +44,20 @@ try:
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
+
+if not RICH_AVAILABLE and not os.environ.get("RICH_AUTO_INSTALL_ATTEMPTED"):
+    print("\n  [KALI-FOX] 'rich' library is missing. Installing it automatically for the best UI experience...")
+    os.environ["RICH_AUTO_INSTALL_ATTEMPTED"] = "1"
+    try:
+        if os.geteuid() == 0:
+            subprocess.run(["apt-get", "update", "-qq"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["apt-get", "install", "-y", "-qq", "python3-rich"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.run([sys.executable, "-m", "pip", "install", "rich", "--user"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    print("  [KALI-FOX] Restarting installer...\n")
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 REPO_URLS = [
@@ -258,7 +272,7 @@ class RichPrinter:
         subtitle = Text("RTL8188EUS Driver Installer — Self-Healing DKMS Edition", style="bold bright_white")
         credits_notice = Text("Driver Rights & Credits: aircrack-ng · gglluukk · lwfinger | Created by cid-moosa", style="dim cyan")
         panel = Panel(
-            Align.center(logo_text + Text("\n") + Align.center(subtitle) + Text("\n") + Align.center(credits_notice)),
+            Align.center(logo_text + Text("\n") + subtitle + Text("\n") + credits_notice),
             border_style="bold bright_magenta",
             box=box.DOUBLE,
             padding=(1, 2),
@@ -1260,9 +1274,9 @@ def main() -> None:
 if __name__ == "__main__":
     if not RICH_AVAILABLE:
         print(
-            "\n[WARN] The 'rich' library is not installed.\n"
+            "\n[WARN] The 'rich' library could not be auto-installed.\n"
             "       The installer will work fine with plain text output,\n"
-            "       but for the best experience install it first:\n\n"
+            "       but for the best experience you can install it manually:\n\n"
             "         apt install python3-rich\n"
             "       or\n"
             "         pip install rich\n"
